@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Geminadas.com</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+    <style>
+      body { overflow: auto; padding: 2rem; }
+      .admin-container { max-width: 800px; margin: 0 auto; display: none; }
+      .login-container { max-width: 400px; margin: 100px auto; text-align: center; }
+      .panel { background: rgba(20,20,20,0.8); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem; backdrop-filter: blur(10px); }
+      h1, h2 { color: white; margin-bottom: 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container panel">
+      <h2>Admin Login</h2>
+      <form id="login-form">
+        <div class="form-group">
+          <input type="password" id="login-password" placeholder="Password" required style="width: 100%; padding: 1rem; border-radius: 0.5rem; background: #050505; border: 1px solid rgba(255,255,255,0.2); color: white;" />
+        </div>
+        <button type="submit" class="submit-btn">Entrar</button>
+      </form>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="admin-dashboard" class="admin-container">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h1 style="margin: 0;">Painel de Administração</h1>
+        <button id="logout-btn" class="back-btn">Sair</button>
+      </div>
+
+      <div class="panel">
+        <h2>Adicionar Projeto</h2>
+        <form id="admin-form">
+            <div class="form-group">
+              <label>Title</label>
+              <input type="text" id="form-title" required placeholder="e.g. Lumina Residence" />
+            </div>
+            <div class="form-group">
+              <label>Location & Year</label>
+              <input type="text" id="form-subtitle" required placeholder="e.g. Los Angeles, 2026" />
+            </div>
+            <div class="form-group" style="display: flex; gap: 1rem;">
+              <div style="flex: 1;">
+                <label>Lot Size</label>
+                <input type="text" id="form-lot" required placeholder="e.g. 15x30m" />
+              </div>
+              <div style="flex: 1;">
+                <label>House Type</label>
+                <select id="form-type" required style="width: 100%; background-color: #050505; border: 1px solid rgba(255,255,255,0.2); color: white; padding: 1rem; border-radius: 0.5rem; font-family: inherit; font-size: 1rem;">
+                  <option value="Térrea">Térrea</option>
+                  <option value="Sobrado">Sobrado</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea id="form-desc" rows="4" required placeholder="Project description..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>Facade Images (Up to 5)</label>
+              <input type="file" id="form-facade" accept="image/*" multiple required />
+            </div>
+            <div class="form-group">
+              <label>Floor Plan Images (Up to 3)</label>
+              <input type="file" id="form-plan" accept="image/*" multiple required />
+            </div>
+            <button type="submit" class="submit-btn" id="submit-admin-btn">Upload Project</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Projetos Cadastrados</h2>
+        <div id="projects-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
+          <p style="color: #888;">Carregando projetos...</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Configurar Redes Sociais</h2>
+        <form id="settings-form">
+            <div class="form-group">
+              <label>Instagram URL</label>
+              <input type="url" id="form-instagram" placeholder="https://instagram.com/..." />
+            </div>
+            <div class="form-group">
+              <label>Facebook URL</label>
+              <input type="url" id="form-facebook" placeholder="https://facebook.com/..." />
+            </div>
+            <div class="form-group">
+              <label>YouTube URL</label>
+              <input type="url" id="form-youtube" placeholder="https://youtube.com/..." />
+            </div>
+            <div class="form-group">
+              <label>WhatsApp Link</label>
+              <input type="url" id="form-whatsapp" placeholder="https://wa.me/..." />
+            </div>
+            <button type="submit" class="submit-btn" id="submit-settings-btn">Salvar</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Alterar Senha</h2>
+        <form id="password-form">
+            <div class="form-group">
+              <label>Nova Senha</label>
+              <input type="password" id="form-new-password" required placeholder="Digite a nova senha" />
+            </div>
+            <button type="submit" class="submit-btn" id="submit-password-btn">Salvar Senha</button>
+        </form>
+      </div>
+    </div>
+    
+    <script type="module" src="./admin.js"></script>
+  </body>
+</html>
