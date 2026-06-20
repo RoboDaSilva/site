@@ -183,6 +183,6 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Project deleted' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
 });
