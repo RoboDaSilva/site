@@ -3,13 +3,12 @@ const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
 
-// Token de sessão dinâmico gerado ao iniciar o servidor
-const SESSION_TOKEN = 'Bearer ' + crypto.randomUUID();
+// Token estável: não expira nem invalida a sessão após novos deploys ou reinicializações
+const SESSION_TOKEN = process.env.ADMIN_SESSION_TOKEN || 'Bearer geminadas-adm-token-secret-2026';
 
 // Diretório para armazenamento das imagens (fachadas e plantas)
 const imagesDir = path.join(__dirname, 'images');
@@ -144,84 +143,3 @@ app.post('/api/projects', requireAuth, upload.fields([{ name: 'facades', maxCoun
     facades: facadeFiles.map(file => `/images/${file.filename}`),
     plans: planFiles.map(file => `/images/${file.filename}`)
   };
-
-  data.push(newProject);
-  fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-
-  res.status(201).json(newProject);
-});
-
-app.get('/api/settings', (req, res) => {
-  const settingsPath = path.join(__dirname, 'settings.json');
-  if (!fs.existsSync(settingsPath)) {
-    return res.json({ instagram: '', facebook: '', youtube: '', whatsapp: '' });
-  }
-  try {
-    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    res.json(data);
-  } catch (e) {
-    res.json({ instagram: '', facebook: '', youtube: '', whatsapp: '' });
-  }
-});
-
-app.post('/api/settings', requireAuth, (req, res) => {
-  const { instagram, facebook, youtube, whatsapp } = req.body;
-  const settingsPath = path.join(__dirname, 'settings.json');
-  
-  const newSettings = {
-    instagram: instagram || '',
-    facebook: facebook || '',
-    youtube: youtube || '',
-    whatsapp: whatsapp || ''
-  };
-
-  fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2));
-  res.json(newSettings);
-});
-
-app.delete('/api/projects/:id', requireAuth, (req, res) => {
-  const projectId = parseInt(req.params.id);
-  const dataPath = path.join(__dirname, 'data.json');
-  
-  if (!fs.existsSync(dataPath)) {
-    return res.status(404).json({ error: 'No projects found' });
-  }
-
-  let data = [];
-  try {
-    data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-  } catch (e) {
-    return res.status(500).json({ error: 'Error reading database' });
-  }
-
-  const projectIndex = data.findIndex(p => p.id === projectId);
-  if (projectIndex === -1) {
-    return res.status(404).json({ error: 'Project not found' });
-  }
-
-  const project = data[projectIndex];
-  
-  // Remover os ficheiros físicos do disco
-  const filesToDelete = [...(project.facades || []), ...(project.plans || [])];
-  filesToDelete.forEach(fileUrl => {
-    // Extrai apenas o nome do ficheiro (ex: de /images/123.jpg obtém 123.jpg)
-    const fileName = path.basename(fileUrl);
-    const filePath = path.join(imagesDir, fileName);
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (err) {
-        console.error('Erro ao deletar ficheiro:', filePath, err);
-      }
-    }
-  });
-
-  data.splice(projectIndex, 1);
-  fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-
-  res.json({ success: true, message: 'Project deleted' });
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
