@@ -29,7 +29,7 @@ let allProjects = [];
 
 const fetchProjects = async () => {
   try {
-    const res = await fetch('http://localhost:3000/api/projects');
+    const res = await fetch('/api/projects');
     return await res.json();
   } catch (err) {
     console.error('Failed to fetch projects', err);
@@ -60,7 +60,6 @@ const buildGallery = (projects) => {
   
   let galleryItems = [];
   if (projects.length > 0) {
-    // Usar a quantidade real de projetos cadastrados
     const count = projects.length;
     for (let i = 0; i < count; i++) {
       galleryItems.push({
@@ -69,8 +68,6 @@ const buildGallery = (projects) => {
       });
     }
     
-    // Calcular o raio baseado na quantidade para manter uma densidade visual constante.
-    // Raio cresce com a raiz quadrada do número de itens. Raio mínimo de 8.
     radius = Math.max(8, 2.8 * Math.sqrt(count));
 
   } else {
@@ -83,9 +80,8 @@ const buildGallery = (projects) => {
   gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
 
   galleryItems.forEach((item, index) => {
-    // Determine image URL - handle full paths vs local paths
     const facadePath = item.facades ? item.facades[0] : item.facade;
-    const imgUrl = facadePath.startsWith('http') ? facadePath : `http://localhost:3000${facadePath}`;
+    const imgUrl = facadePath;
     
     textureLoader.load(imgUrl, (texture) => {
       texture.generateMipmaps = true;
@@ -101,7 +97,6 @@ const buildGallery = (projects) => {
       const card = new THREE.Mesh(cardGeometry, material);
       card.userData = item;
 
-      // Create discrete text label for lot size
       let textMaterial = null;
       if (item.lotSize) {
         const canvas = document.createElement('canvas');
@@ -111,359 +106,4 @@ const buildGallery = (projects) => {
         context.font = "300 36px Inter, sans-serif";
         context.fillStyle = "rgba(255, 255, 255, 0.7)";
         context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.fillText(`Lote: ${item.lotSize}`, 256, 64);
-        
-        const textTexture = new THREE.CanvasTexture(canvas);
-        textTexture.minFilter = THREE.LinearFilter;
-        
-        textMaterial = new THREE.MeshBasicMaterial({ map: textTexture, transparent: true, opacity: 0 });
-        const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), textMaterial);
-        textPlane.position.y = -2.8; // Place below the card
-        
-        card.add(textPlane);
-      }
-
-      // Restringir a distribuição para não passar exatamente pelos polos (evita colisão no topo e fundo)
-      // Expandido para -0.85 a 0.85 para ficar mais esférico, deixando apenas um pequeno buraco nos polos.
-      const h = -0.85 + (1.7 * index) / Math.max(1, galleryItems.length - 1);
-      const phi = Math.acos(h);
-      const theta = Math.sqrt(galleryItems.length * Math.PI) * phi;
-
-      card.position.setFromSphericalCoords(radius, phi, theta);
-      card.lookAt(0, 0, 0);
-
-      galleryGroup.add(card);
-      cards.push(card);
-
-      const delay = Math.random() * 0.5;
-      gsap.to(material, { opacity: 1, duration: 1, delay });
-      if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 1, delay });
-
-      loadedCount++;
-      if (loadedCount === galleryItems.length) {
-        gsap.to(loaderEl, { opacity: 0, duration: 0.5, onComplete: () => loaderEl.style.display = 'none' });
-      }
-    });
-  });
-};
-
-// Initialize
-fetchProjects().then(data => {
-  allProjects = data;
-  buildGallery(data);
-});
-
-// --- INTERACTIONS ---
-let isDragging = false;
-let previousMousePosition = { x: 0, y: 0 };
-let targetRotation = { x: 0, y: 0 };
-let currentRotation = { x: 0, y: 0 };
-let hasMoved = false;
-let targetFov = 60;
-
-window.addEventListener('wheel', (e) => {
-  if (isDetailView) return;
-  targetFov += e.deltaY * 0.05;
-  targetFov = Math.max(30, Math.min(100, targetFov));
-}, { passive: true });
-
-const onPointerDown = (e) => {
-  if (isDetailView) return;
-  isDragging = true;
-  hasMoved = false;
-  previousMousePosition = { x: e.clientX, y: e.clientY };
-  document.body.style.cursor = 'grabbing';
-};
-
-const onPointerMove = (e) => {
-  if (isDetailView) return;
-  
-  const mouse = new THREE.Vector2(
-    (e.clientX / window.innerWidth) * 2 - 1,
-    -(e.clientY / window.innerHeight) * 2 + 1
-  );
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(cards, false);
-  
-  if (intersects.length > 0) {
-    document.body.style.cursor = isDragging ? 'grabbing' : 'pointer';
-  } else {
-    document.body.style.cursor = isDragging ? 'grabbing' : 'grab';
-  }
-
-  if (!isDragging) return;
-
-  const deltaMove = {
-    x: e.clientX - previousMousePosition.x,
-    y: e.clientY - previousMousePosition.y
-  };
-
-  if (Math.abs(deltaMove.x) > 2 || Math.abs(deltaMove.y) > 2) {
-    hasMoved = true;
-  }
-
-  targetRotation.y += deltaMove.x * 0.005;
-  targetRotation.x += deltaMove.y * 0.005;
-  targetRotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotation.x));
-
-  previousMousePosition = { x: e.clientX, y: e.clientY };
-};
-
-const onPointerUp = () => {
-  if (isDetailView) return;
-  isDragging = false;
-  document.body.style.cursor = 'grab';
-};
-
-window.addEventListener('pointerdown', onPointerDown);
-window.addEventListener('pointermove', onPointerMove);
-window.addEventListener('pointerup', onPointerUp);
-window.addEventListener('pointerleave', onPointerUp);
-
-const raycaster = new THREE.Raycaster();
-let isDetailView = false;
-let isRendering = true;
-let activeCard = null;
-
-const detailOverlay = document.getElementById('detail-overlay');
-const detailTitle = document.getElementById('detail-title');
-const detailSubtitle = document.getElementById('detail-subtitle');
-const detailSpecs = document.getElementById('detail-specs');
-const detailDesc = document.getElementById('detail-desc');
-const detailFacadesContainer = document.getElementById('detail-facades-container');
-const detailPlansContainer = document.getElementById('detail-plans-container');
-const backBtn = document.getElementById('back-btn');
-
-window.addEventListener('click', (e) => {
-  if (hasMoved || isDetailView || e.target.closest('#admin-overlay') || e.target.closest('.header')) return;
-
-  const mouse = new THREE.Vector2(
-    (e.clientX / window.innerWidth) * 2 - 1,
-    -(e.clientY / window.innerHeight) * 2 + 1
-  );
-
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(cards, false);
-
-  if (intersects.length > 0) {
-    openDetail(intersects[0].object);
-  }
-});
-
-const openDetail = (card) => {
-  isDetailView = true;
-  history.pushState({ view: 'detail' }, '', '#projeto');
-  activeCard = card;
-  const data = card.userData;
-
-  detailTitle.innerText = data.title;
-  detailSubtitle.innerText = data.subtitle;
-  detailSpecs.innerText = `${data.houseType || 'N/A'} • Lote: ${data.lotSize || 'N/A'}`;
-  detailDesc.innerText = data.desc;
-  
-  detailFacadesContainer.innerHTML = '';
-  const facadesArray = data.facades || [data.facade];
-  facadesArray.forEach(path => {
-    if(!path) return;
-    const url = path.startsWith('http') ? path : `http://localhost:3000${path}`;
-    const img = document.createElement('img');
-    img.src = url;
-    img.style.width = '100%';
-    img.style.borderRadius = '1rem';
-    detailFacadesContainer.appendChild(img);
-  });
-
-  detailPlansContainer.innerHTML = '';
-  const plansArray = data.plans || [data.plan];
-  plansArray.forEach(path => {
-    if(!path) return;
-    const url = path.startsWith('http') ? path : `http://localhost:3000${path}`;
-    const img = document.createElement('img');
-    img.src = url;
-    img.style.width = '100%';
-    img.style.borderRadius = '1rem';
-    detailPlansContainer.appendChild(img);
-  });
-
-  const targetPos = new THREE.Vector3();
-  card.getWorldPosition(targetPos);
-  const camTargetPos = targetPos.clone().multiplyScalar(0.7);
-
-  gsap.to(camera.position, {
-    x: camTargetPos.x,
-    y: camTargetPos.y,
-    z: camTargetPos.z,
-    duration: 1.5,
-    ease: 'power3.inOut'
-  });
-
-  gsap.to(detailOverlay, {
-    autoAlpha: 1,
-    duration: 1,
-    delay: 0.8,
-    ease: 'power2.out',
-    onComplete: () => {
-      isRendering = false;
-    }
-  });
-};
-
-const closeDetail = () => {
-  if (!isDetailView) return;
-  isRendering = true;
-  gsap.to(detailOverlay, {
-    autoAlpha: 0,
-    duration: 0.5,
-    ease: 'power2.in',
-    onComplete: () => {
-      gsap.to(camera.position, {
-        x: 0,
-        y: 0,
-        z: 0,
-        duration: 1.5,
-        ease: 'power3.inOut',
-        onComplete: () => {
-          isDetailView = false;
-          activeCard = null;
-        }
-      });
-    }
-  });
-};
-
-backBtn.addEventListener('click', () => {
-  if (window.location.hash === '#projeto') {
-    history.back();
-  } else {
-    closeDetail();
-  }
-});
-
-// Handle browser back button
-window.addEventListener('popstate', () => {
-  if (isDetailView) {
-    closeDetail();
-  }
-  if (searchOverlay.classList.contains('active')) {
-    searchOverlay.classList.remove('active');
-  }
-});
-
-// --- SEARCH LOGIC ---
-const openSearchBtn = document.getElementById('open-search-btn');
-const closeSearchBtn = document.getElementById('close-search-btn');
-const searchOverlay = document.getElementById('search-overlay');
-const searchOptionsContainer = document.getElementById('search-options-container');
-let currentFilter = null;
-
-openSearchBtn.addEventListener('click', () => {
-  searchOverlay.classList.add('active');
-  history.pushState({ view: 'search' }, '', '#pesquisa');
-  const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
-  searchOptionsContainer.innerHTML = '';
-  
-  const btnAll = document.createElement('button');
-  btnAll.className = 'submit-btn';
-  btnAll.style.background = currentFilter === null ? '#fff' : 'transparent';
-  btnAll.style.color = currentFilter === null ? '#000' : '#fff';
-  btnAll.style.border = '1px solid #fff';
-  btnAll.innerText = 'Ver Todos';
-  btnAll.addEventListener('click', () => {
-    currentFilter = null;
-    buildGallery(allProjects);
-    if (window.location.hash === '#pesquisa') history.back();
-    else searchOverlay.classList.remove('active');
-  });
-  searchOptionsContainer.appendChild(btnAll);
-
-  sizes.forEach(size => {
-    const btn = document.createElement('button');
-    btn.className = 'submit-btn';
-    btn.style.background = currentFilter === size ? '#fff' : 'transparent';
-    btn.style.color = currentFilter === size ? '#000' : '#fff';
-    btn.style.border = '1px solid #fff';
-    btn.innerText = size;
-    btn.addEventListener('click', () => {
-      currentFilter = size;
-      const filtered = allProjects.filter(p => p.lotSize === size);
-      buildGallery(filtered);
-      if (window.location.hash === '#pesquisa') history.back();
-      else searchOverlay.classList.remove('active');
-    });
-    searchOptionsContainer.appendChild(btn);
-  });
-});
-
-closeSearchBtn.addEventListener('click', () => {
-  if (window.location.hash === '#pesquisa') {
-    history.back();
-  } else {
-    searchOverlay.classList.remove('active');
-  }
-});
-
-// --- SETTINGS (FOOTER) ---
-const linkInstagram = document.getElementById('link-instagram');
-const linkFacebook = document.getElementById('link-facebook');
-const linkYoutube = document.getElementById('link-youtube');
-const linkWhatsapp = document.getElementById('link-whatsapp');
-
-const fetchSettings = async () => {
-  try {
-    const res = await fetch('http://localhost:3000/api/settings');
-    const data = await res.json();
-    
-    // Apply to footer links
-    if(linkInstagram) linkInstagram.href = data.instagram || '#';
-    if(linkFacebook) linkFacebook.href = data.facebook || '#';
-    if(linkYoutube) linkYoutube.href = data.youtube || '#';
-    if(linkWhatsapp) linkWhatsapp.href = data.whatsapp || '#';
-  } catch (err) {
-    console.error('Failed to fetch settings', err);
-  }
-};
-
-fetchSettings();
-
-
-// --- RENDER LOOP ---
-document.body.style.cursor = 'grab';
-const clock = new THREE.Clock();
-
-const tick = () => {
-  if (!isDetailView) {
-    currentRotation.x = gsap.utils.interpolate(currentRotation.x, targetRotation.x, 0.05);
-    currentRotation.y = gsap.utils.interpolate(currentRotation.y, targetRotation.y, 0.05);
-
-    galleryGroup.rotation.x = currentRotation.x;
-    galleryGroup.rotation.y = currentRotation.y;
-    
-    if (!isDragging) {
-      targetRotation.y -= 0.0005;
-    }
-
-    if (Math.abs(camera.fov - targetFov) > 0.01) {
-      camera.fov = gsap.utils.interpolate(camera.fov, targetFov, 0.05);
-      camera.updateProjectionMatrix();
-    }
-  }
-
-  if (isRendering) {
-    renderer.render(scene, camera);
-  }
-  requestAnimationFrame(tick);
-};
-
-tick();
-
-// --- RESIZE ---
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-});
-
-// --- PREVENT SAVING IMAGES ---
-document.addEventListener('contextmenu', event => event.preventDefault());
+        context
