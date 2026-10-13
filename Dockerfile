@@ -10,4 +10,4 @@ COPY . .
 EXPOSE 80
 ENV PORT=80
 
-CMD ["sh", "-c", "ls -la /app && node server.js"]
+CMD ["sh", "-c", "ls -la /app && node server.cjs"]
