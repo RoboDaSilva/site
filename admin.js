@@ -8,7 +8,7 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const password = document.getElementById('login-password').value;
   try {
-    const res = await fetch('http://localhost:3000/api/login', {
+    const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
@@ -74,7 +74,7 @@ adminForm.addEventListener('submit', async (e) => {
   submitAdminBtn.disabled = true;
 
   try {
-    const res = await fetch('http://localhost:3000/api/projects', {
+    const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Authorization': localStorage.getItem('adminToken') },
       body: formData
@@ -102,7 +102,7 @@ const submitSettingsBtn = document.getElementById('submit-settings-btn');
 
 async function fetchSettings() {
   try {
-    const res = await fetch('http://localhost:3000/api/settings');
+    const res = await fetch('/api/settings');
     const data = await res.json();
     formInstagram.value = data.instagram || '';
     formFacebook.value = data.facebook || '';
@@ -127,7 +127,7 @@ settingsForm.addEventListener('submit', async (e) => {
   submitSettingsBtn.disabled = true;
 
   try {
-    const res = await fetch('http://localhost:3000/api/settings', {
+    const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -160,7 +160,7 @@ passwordForm.addEventListener('submit', async (e) => {
   submitPasswordBtn.disabled = true;
 
   try {
-    const res = await fetch('http://localhost:3000/api/password', {
+    const res = await fetch('/api/password', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -186,7 +186,7 @@ const projectsListContainer = document.getElementById('projects-list-container')
 async function fetchAdminProjects() {
   if (!projectsListContainer) return;
   try {
-    const res = await fetch('http://localhost:3000/api/projects');
+    const res = await fetch('/api/projects');
     const data = await res.json();
     
     projectsListContainer.innerHTML = '';
@@ -215,12 +215,12 @@ async function fetchAdminProjects() {
           deleteBtn.innerText = 'Excluindo...';
           deleteBtn.disabled = true;
           try {
-            const delRes = await fetch(`http://localhost:3000/api/projects/${project.id}`, {
+            const delRes = await fetch(`/api/projects/${project.id}`, {
               method: 'DELETE',
               headers: { 'Authorization': localStorage.getItem('adminToken') }
             });
             if (!delRes.ok) throw new Error('Falha ao excluir');
-            fetchAdminProjects(); // reload list
+            fetchAdminProjects();
             alert('Projeto excluído com sucesso!');
           } catch (err) {
             alert('Falha ao excluir (Autorização negada?).');
@@ -237,4 +237,3 @@ async function fetchAdminProjects() {
     projectsListContainer.innerHTML = '<p style="color: #ff4444;">Erro ao carregar projetos.</p>';
   }
 }
-
