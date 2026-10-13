@@ -15,10 +15,12 @@ const SESSION_TOKEN = 'Bearer ' + crypto.randomUUID();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
+app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
+
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
