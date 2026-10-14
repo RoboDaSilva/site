@@ -41,18 +41,35 @@ const getYoutubeEmbedUrl = (url) => {
 
 const mergeProjectMeta = (projects, settings) => {
   const metaMap = (settings && settings.projectMeta) ? settings.projectMeta : {};
+  const META_SEPARATOR = '\n<!--LEVEL_META:';
+  const META_END = '-->';
+
   return (projects || [])
     .map(p => {
+      let rawDesc = p.desc || '';
+      let embedded = {};
+      const sepIdx = rawDesc.indexOf(META_SEPARATOR);
+      if (sepIdx !== -1) {
+        const endIdx = rawDesc.indexOf(META_END, sepIdx);
+        if (endIdx !== -1) {
+          try {
+            embedded = JSON.parse(rawDesc.slice(sepIdx + META_SEPARATOR.length, endIdx));
+          } catch (e) {}
+        }
+        rawDesc = rawDesc.slice(0, sepIdx).trim();
+      }
+
       const extra = metaMap[p.id] || {};
       return {
         ...p,
-        area: p.area ?? extra.area ?? '',
-        bedrooms: p.bedrooms ?? extra.bedrooms ?? '',
-        garage: p.garage ?? extra.garage ?? '',
-        status: p.status ?? extra.status ?? '',
-        videoUrl: p.videoUrl ?? extra.videoUrl ?? '',
-        visible: p.visible !== undefined ? p.visible : (extra.visible !== false),
-        order: typeof p.order === 'number' ? p.order : (typeof extra.order === 'number' ? extra.order : 9999)
+        desc: rawDesc,
+        area: p.area || extra.area || embedded.area || '',
+        bedrooms: p.bedrooms || extra.bedrooms || embedded.bedrooms || '',
+        garage: p.garage || extra.garage || embedded.garage || '',
+        status: p.status || extra.status || embedded.status || '',
+        videoUrl: p.videoUrl || extra.videoUrl || embedded.videoUrl || '',
+        visible: p.visible !== undefined ? p.visible : (extra.visible !== undefined ? extra.visible : (embedded.visible !== false)),
+        order: typeof p.order === 'number' ? p.order : (typeof extra.order === 'number' ? extra.order : (typeof embedded.order === 'number' ? embedded.order : 9999))
       };
     })
     .filter(p => p.visible !== false)
