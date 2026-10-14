@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
@@ -54,6 +54,9 @@ const DEFAULT_SETTINGS = {
   youtubeEnabled: true,
   whatsapp: '',
   whatsappEnabled: true,
+  whatsappMsg: 'Olá! Encontrei a construtora no Google, gostaria de mais informações.',
+  address: 'Avenida Centenário 520, Maringá - PR',
+  projectMeta: {},
   hasLogo: fs.existsSync(path.join(IMAGES_DIR, 'logo.png')),
   logoMimeType: 'image/png',
   logoDataBase64: null,
@@ -246,6 +249,9 @@ app.get('/api/settings', (req, res) => {
     youtubeEnabled: toBool(s.youtubeEnabled, true),
     whatsapp: s.whatsapp || '',
     whatsappEnabled: toBool(s.whatsappEnabled, true),
+    whatsappMsg: s.whatsappMsg || 'Olá! Encontrei a construtora no Google, gostaria de mais informações.',
+    address: s.address || 'Avenida Centenário 520, Maringá - PR',
+    projectMeta: s.projectMeta || {},
     hasLogo,
     logoUpdatedAt: s.logoUpdatedAt || Date.now()
   });
@@ -264,7 +270,10 @@ app.post('/api/settings', requireAuth, (req, res) => {
     youtube: String(body.youtube || '').trim(),
     youtubeEnabled: toBool(body.youtubeEnabled, true),
     whatsapp: String(body.whatsapp || '').trim(),
-    whatsappEnabled: toBool(body.whatsappEnabled, true)
+    whatsappEnabled: toBool(body.whatsappEnabled, true),
+    whatsappMsg: String(body.whatsappMsg || '').trim(),
+    address: String(body.address || '').trim(),
+    projectMeta: body.projectMeta || currentSettings.projectMeta || {}
   };
 
   writeJsonSafe(SETTINGS_FILE, updatedSettings);
