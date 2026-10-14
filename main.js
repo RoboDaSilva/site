@@ -24,16 +24,39 @@ let cards = [];
 let radius = 12;
 
 let allProjects = [];
+let siteSettings = {};
 
-const fetchProjects = async () => {
-  try {
-    const res = await fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    console.error('Failed to fetch projects', err);
-    return [];
+const trackEvent = (eventName, params = {}) => {
+  if (typeof window.gtag === 'function') {
+    window.gtag('event', eventName, params);
   }
+};
+
+const getYoutubeEmbedUrl = (url) => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? `https://www.youtube.com/embed/${match[2]}` : null;
+};
+
+const mergeProjectMeta = (projects, settings) => {
+  const metaMap = (settings && settings.projectMeta) ? settings.projectMeta : {};
+  return (projects || [])
+    .map(p => {
+      const extra = metaMap[p.id] || {};
+      return {
+        ...p,
+        area: p.area ?? extra.area ?? '',
+        bedrooms: p.bedrooms ?? extra.bedrooms ?? '',
+        garage: p.garage ?? extra.garage ?? '',
+        status: p.status ?? extra.status ?? '',
+        videoUrl: p.videoUrl ?? extra.videoUrl ?? '',
+        visible: p.visible !== undefined ? p.visible : (extra.visible !== false),
+        order: typeof p.order === 'number' ? p.order : (typeof extra.order === 'number' ? extra.order : 9999)
+      };
+    })
+    .filter(p => p.visible !== false)
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 };
 
 const buildGallery = (projects) => {
@@ -115,16 +138,17 @@ const buildGallery = (projects) => {
           canvas.height = 128;
           const context = canvas.getContext('2d');
           context.font = '300 36px Inter, sans-serif';
-          context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          context.fillStyle = 'rgba(255, 255, 255, 0.85)';
           context.textAlign = 'center';
           context.textBaseline = 'middle';
-          context.fillText(`Lote: ${item.lotSize}`, 256, 64);
+          const labelText = item.area ? `Lote: ${item.lotSize} • ${item.area}` : `Lote: ${item.lotSize}`;
+          context.fillText(labelText, 256, 64);
 
           const textTexture = new THREE.CanvasTexture(canvas);
           textTexture.minFilter = THREE.LinearFilter;
 
           textMaterial = new THREE.MeshBasicMaterial({ map: textTexture, transparent: true, opacity: 0 });
-          const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), textMaterial);
+          const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.1), textMaterial);
           textPlane.position.y = -2.8;
           card.add(textPlane);
         }
@@ -165,11 +189,6 @@ const buildGallery = (projects) => {
   });
 };
 
-fetchProjects().then(data => {
-  allProjects = data;
-  buildGallery(data);
-});
-
 const raycaster = new THREE.Raycaster();
 let isDetailView = false;
 let isRendering = true;
@@ -180,6 +199,8 @@ const detailTitle = document.getElementById('detail-title');
 const detailSubtitle = document.getElementById('detail-subtitle');
 const detailSpecs = document.getElementById('detail-specs');
 const detailDesc = document.getElementById('detail-desc');
+const detailWhatsappBtn = document.getElementById('detail-whatsapp-btn');
+const detailVideoWrapper = document.getElementById('detail-video-wrapper');
 const detailFacadesContainer = document.getElementById('detail-facades-container');
 const detailPlansContainer = document.getElementById('detail-plans-container');
 const backBtn = document.getElementById('back-btn');
@@ -249,7 +270,6 @@ const onPointerMove = (e) => {
   const totalDeltaX = e.clientX - pointerDownPos.x;
   const totalDeltaY = e.clientY - pointerDownPos.y;
 
-  // Tolerância maior para telas sensíveis ao toque (iPhone/Android)
   const moveThreshold = e.pointerType === 'touch' ? 12 : 5;
   if (Math.hypot(totalDeltaX, totalDeltaY) > moveThreshold) {
     hasMoved = true;
@@ -275,7 +295,6 @@ const onPointerUp = (e) => {
 
   if (!wasDragging || hasMoved || isUIElement(e.target)) return;
 
-  // Garante que matrizes da câmera e dos cards estejam atualizadas no momento do toque
   camera.updateMatrixWorld();
   galleryGroup.updateMatrixWorld(true);
 
@@ -313,10 +332,60 @@ const openDetail = (card) => {
   activeCard = card;
   const data = card.userData;
 
+  trackEvent('visualizar_projeto', {
+    projeto_titulo: data.title || 'Projeto',
+    projeto_lote: data.lotSize || ''
+  });
+
   detailTitle.innerText = data.title || '';
   detailSubtitle.innerText = data.subtitle || '';
-  detailSpecs.innerText = `${data.houseType || 'N/A'} • Lote: ${data.lotSize || 'N/A'}`;
   detailDesc.innerText = data.desc || '';
+
+  // Monta os Badges da Ficha Técnica
+  detailSpecs.innerHTML = '';
+  const badges = [
+    data.houseType ? `🏠 ${data.houseType}` : null,
+    data.lotSize ? `📏 Lote: ${data.lotSize}` : null,
+    data.area ? `📐 Área: ${data.area}` : null,
+    data.bedrooms ? `🛏️ ${data.bedrooms}` : null,
+    data.garage ? `🚗 ${data.garage}` : null,
+    data.status ? `✨ ${data.status}` : null
+  ].filter(Boolean);
+
+  badges.forEach(text => {
+    const span = document.createElement('span');
+    span.className = 'spec-badge';
+    span.innerText = text;
+    detailSpecs.appendChild(span);
+  });
+
+  // Configura botão de WhatsApp dinâmico com o nome do projeto
+  if (detailWhatsappBtn) {
+    let basePhone = '5544998641000';
+    if (siteSettings.whatsapp) {
+      const phoneMatch = siteSettings.whatsapp.match(/(\d{10,15})/);
+      if (phoneMatch) basePhone = phoneMatch[1];
+    }
+    const msg = `Olá! Vi o projeto "${data.title || ''}" (${data.lotSize ? `Lote ${data.lotSize}` : ''}) no site da Level Construtora e gostaria de mais informações.`;
+    detailWhatsappBtn.href = `https://wa.me/${basePhone}?text=${encodeURIComponent(msg)}`;
+    detailWhatsappBtn.onclick = () => {
+      trackEvent('clique_whatsapp_projeto', {
+        projeto_titulo: data.title || 'Projeto'
+      });
+    };
+  }
+
+  // Configura vídeo do YouTube se cadastrado
+  if (detailVideoWrapper) {
+    const embedUrl = getYoutubeEmbedUrl(data.videoUrl);
+    if (embedUrl) {
+      detailVideoWrapper.style.display = 'block';
+      detailVideoWrapper.innerHTML = `<iframe src="${embedUrl}" title="${data.title}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    } else {
+      detailVideoWrapper.style.display = 'none';
+      detailVideoWrapper.innerHTML = '';
+    }
+  }
 
   detailFacadesContainer.innerHTML = '';
   const facadesArray = data.facades || [data.facade];
@@ -324,17 +393,21 @@ const openDetail = (card) => {
     if (!path) return;
     const img = document.createElement('img');
     img.src = path;
+    img.alt = `${data.title || 'Projeto'} - Fachada`;
+    img.loading = 'lazy';
     img.style.width = '100%';
     img.style.borderRadius = '1rem';
     detailFacadesContainer.appendChild(img);
   });
 
   detailPlansContainer.innerHTML = '';
-  const plansArray = data.plans || [data.plan];
+  const plansArray = (data.plans || [data.plan]).filter(Boolean);
+  detailPlansContainer.style.display = plansArray.length > 0 ? 'flex' : 'none';
   plansArray.forEach(path => {
-    if (!path) return;
     const img = document.createElement('img');
     img.src = path;
+    img.alt = `${data.title || 'Projeto'} - Planta`;
+    img.loading = 'lazy';
     img.style.width = '100%';
     img.style.borderRadius = '1rem';
     detailPlansContainer.appendChild(img);
@@ -352,7 +425,6 @@ const openDetail = (card) => {
     ease: 'power3.inOut'
   });
 
-  // Garante visibilidade e interatividade no iOS Safari
   detailOverlay.style.display = 'block';
   detailOverlay.style.pointerEvents = 'auto';
   detailOverlay.classList.add('active-detail');
@@ -374,6 +446,10 @@ const closeDetail = () => {
   isRendering = true;
   detailOverlay.style.pointerEvents = 'none';
   detailOverlay.classList.remove('active-detail');
+
+  if (detailVideoWrapper) {
+    detailVideoWrapper.innerHTML = '';
+  }
 
   gsap.to(detailOverlay, {
     autoAlpha: 0,
@@ -423,9 +499,11 @@ let currentFilter = null;
 
 if (openSearchBtn && searchOverlay && searchOptionsContainer) {
   openSearchBtn.addEventListener('click', () => {
+    trackEvent('abrir_filtro_projetos');
     searchOverlay.classList.add('active');
     history.pushState({ view: 'search' }, '', '#pesquisa');
     const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
+    const types = [...new Set(allProjects.map(p => p.houseType).filter(Boolean))];
     searchOptionsContainer.innerHTML = '';
 
     const btnAll = document.createElement('button');
@@ -433,7 +511,7 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
     btnAll.style.background = currentFilter === null ? '#fff' : 'transparent';
     btnAll.style.color = currentFilter === null ? '#000' : '#fff';
     btnAll.style.border = '1px solid #fff';
-    btnAll.innerText = 'Ver Todos';
+    btnAll.innerText = `Ver Todos (${allProjects.length})`;
     btnAll.addEventListener('click', () => {
       currentFilter = null;
       buildGallery(allProjects);
@@ -442,22 +520,53 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
     });
     searchOptionsContainer.appendChild(btnAll);
 
-    sizes.forEach(size => {
-      const btn = document.createElement('button');
-      btn.className = 'submit-btn';
-      btn.style.background = currentFilter === size ? '#fff' : 'transparent';
-      btn.style.color = currentFilter === size ? '#000' : '#fff';
-      btn.style.border = '1px solid #fff';
-      btn.innerText = size;
-      btn.addEventListener('click', () => {
-        currentFilter = size;
-        const filtered = allProjects.filter(p => p.lotSize === size);
-        buildGallery(filtered);
-        if (window.location.hash === '#pesquisa') history.back();
-        else searchOverlay.classList.remove('active');
+    if (types.length > 1) {
+      const typeLabel = document.createElement('p');
+      typeLabel.style.cssText = 'margin: 0.75rem 0 0.25rem 0; font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em;';
+      typeLabel.innerText = 'Por Tipo de Imóvel';
+      searchOptionsContainer.appendChild(typeLabel);
+
+      types.forEach(t => {
+        const btn = document.createElement('button');
+        btn.className = 'submit-btn';
+        btn.style.background = currentFilter === `type:${t}` ? '#fff' : 'transparent';
+        btn.style.color = currentFilter === `type:${t}` ? '#000' : '#fff';
+        btn.style.border = '1px solid rgba(255,255,255,0.5)';
+        btn.innerText = t;
+        btn.addEventListener('click', () => {
+          currentFilter = `type:${t}`;
+          const filtered = allProjects.filter(p => p.houseType === t);
+          buildGallery(filtered);
+          if (window.location.hash === '#pesquisa') history.back();
+          else searchOverlay.classList.remove('active');
+        });
+        searchOptionsContainer.appendChild(btn);
       });
-      searchOptionsContainer.appendChild(btn);
-    });
+    }
+
+    if (sizes.length > 0) {
+      const sizeLabel = document.createElement('p');
+      sizeLabel.style.cssText = 'margin: 0.75rem 0 0.25rem 0; font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em;';
+      sizeLabel.innerText = 'Por Medida de Lote';
+      searchOptionsContainer.appendChild(sizeLabel);
+
+      sizes.forEach(size => {
+        const btn = document.createElement('button');
+        btn.className = 'submit-btn';
+        btn.style.background = currentFilter === size ? '#fff' : 'transparent';
+        btn.style.color = currentFilter === size ? '#000' : '#fff';
+        btn.style.border = '1px solid #fff';
+        btn.innerText = `Lote ${size}`;
+        btn.addEventListener('click', () => {
+          currentFilter = size;
+          const filtered = allProjects.filter(p => p.lotSize === size);
+          buildGallery(filtered);
+          if (window.location.hash === '#pesquisa') history.back();
+          else searchOverlay.classList.remove('active');
+        });
+        searchOptionsContainer.appendChild(btn);
+      });
+    }
   });
 }
 
@@ -475,7 +584,14 @@ const linkInstagram = document.getElementById('link-instagram');
 const linkFacebook = document.getElementById('link-facebook');
 const linkYoutube = document.getElementById('link-youtube');
 const linkWhatsapp = document.getElementById('link-whatsapp');
+const footerAddressText = document.getElementById('footer-address-text');
 const siteLogos = document.querySelectorAll('.site-logo');
+
+if (linkWhatsapp) {
+  linkWhatsapp.addEventListener('click', () => {
+    trackEvent('clique_whatsapp_rodape');
+  });
+}
 
 const updateSocialLink = (element, url, enabled) => {
   if (!element) return;
@@ -487,30 +603,55 @@ const updateSocialLink = (element, url, enabled) => {
   }
 };
 
-const fetchSettings = async () => {
+const initApp = async () => {
   try {
-    const res = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' });
-    const data = await res.json();
+    const [settingsRes, projectsRes] = await Promise.all([
+      fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' }),
+      fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' })
+    ]);
 
-    updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
-    updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
-    updateSocialLink(linkYoutube, data.youtube, data.youtubeEnabled);
-    updateSocialLink(linkWhatsapp, data.whatsapp, data.whatsappEnabled);
+    if (settingsRes.ok) {
+      const data = await settingsRes.json();
+      siteSettings = data || {};
 
-    siteLogos.forEach(img => {
-      if (data.hasLogo === false) {
-        img.style.display = 'none';
-      } else {
-        img.style.display = 'block';
-        img.src = `/images/logo.png?t=${data.logoUpdatedAt || Date.now()}`;
+      const defaultWhats = 'https://wa.me/5544998641000?text=Ol%C3%A1!%20Encontrei%20a%20construtora%20no%20Google,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es.';
+      const whatsUrl = (data.whatsapp && data.whatsapp.includes('wa.me') && !data.whatsapp.includes('?text='))
+        ? `${data.whatsapp.replace(/\/$/, '')}?text=Ol%C3%A1!%20Encontrei%20a%20construtora%20no%20Google,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es.`
+        : (data.whatsapp || defaultWhats);
+
+      updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
+      updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
+      updateSocialLink(linkYoutube, data.youtube, data.youtubeEnabled);
+      updateSocialLink(linkWhatsapp, whatsUrl, data.whatsappEnabled);
+
+      if (footerAddressText && data.address) {
+        footerAddressText.innerText = data.address;
       }
-    });
+
+      siteLogos.forEach(img => {
+        if (data.hasLogo === false) {
+          img.style.display = 'none';
+        } else {
+          img.style.display = 'block';
+          img.src = `/images/logo.png?t=${data.logoUpdatedAt || Date.now()}`;
+        }
+      });
+    }
+
+    if (projectsRes.ok) {
+      const rawProjects = await projectsRes.json();
+      allProjects = mergeProjectMeta(rawProjects, siteSettings);
+      buildGallery(allProjects);
+    } else {
+      buildGallery([]);
+    }
   } catch (err) {
-    console.error('Failed to fetch settings', err);
+    console.error('Failed to initialize gallery', err);
+    buildGallery([]);
   }
 };
 
-fetchSettings();
+initApp();
 
 document.body.style.cursor = 'grab';
 
