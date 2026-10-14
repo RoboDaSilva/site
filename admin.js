@@ -25,7 +25,6 @@ const formVisible = document.getElementById('form-visible');
 const formDesc = document.getElementById('form-desc');
 const formFacade = document.getElementById('form-facade');
 const formPlan = document.getElementById('form-plan');
-const formCompressWebp = document.getElementById('form-compress-webp');
 const facadeEditHint = document.getElementById('facade-edit-hint');
 const planEditHint = document.getElementById('plan-edit-hint');
 
@@ -62,6 +61,7 @@ let editingProject = null;
 
 // Auxiliar de padronização de medidas de lote (Ex: 15 + 30 => 15x30m)
 function updateLotFromDimensions() {
+  if (!formLotFront || !formLotDepth || !formLot) return;
   const f = formLotFront.value.trim();
   const d = formLotDepth.value.trim();
   if (f && d) {
@@ -73,7 +73,6 @@ if (formLotFront && formLotDepth) {
   formLotDepth.addEventListener('input', updateLotFromDimensions);
 }
 
-// Normaliza texto de lote digitado manualmente (ex: "15 x 30 m" -> "15x30m")
 function normalizeLotSize(raw) {
   if (!raw) return '';
   const cleaned = raw.trim();
@@ -84,74 +83,63 @@ function normalizeLotSize(raw) {
   return cleaned;
 }
 
-// Extrai metadados extras caso o backend antigo guarde apenas os 5 campos básicos
+// Embute e extrai metadados extras na descrição de forma invisível caso o backend ignore campos novos
+const META_SEPARATOR = '\n<!--LEVEL_META:';
+const META_END = '-->';
+
+function packDescriptionWithMeta(cleanDesc, metaObj) {
+  const hasAnyMeta = metaObj.area || metaObj.bedrooms || metaObj.garage || metaObj.videoUrl || metaObj.status || metaObj.visible === false || typeof metaObj.order === 'number';
+  if (!hasAnyMeta) return cleanDesc;
+  return `${cleanDesc}${META_SEPARATOR}${JSON.stringify(metaObj)}${META_END}`;
+}
+
 export function unpackProjectMeta(project) {
+  let rawDesc = project.desc || '';
+  let embeddedMeta = {};
+
+  const sepIdx = rawDesc.indexOf(META_SEPARATOR);
+  if (sepIdx !== -1) {
+    const endIdx = rawDesc.indexOf(META_END, sepIdx);
+    if (endIdx !== -1) {
+      const jsonStr = rawDesc.slice(sepIdx + META_SEPARATOR.length, endIdx);
+      try {
+        embeddedMeta = JSON.parse(jsonStr);
+      } catch (e) {}
+    }
+    rawDesc = rawDesc.slice(0, sepIdx).trim();
+  }
+
   const metaMap = (cachedSettings && cachedSettings.projectMeta) ? cachedSettings.projectMeta : {};
-  const extra = metaMap[project.id] || {};
+  const settingsMeta = metaMap[project.id] || {};
+
   return {
     ...project,
-    area: project.area ?? extra.area ?? '',
-    bedrooms: project.bedrooms ?? extra.bedrooms ?? '',
-    garage: project.garage ?? extra.garage ?? '',
-    status: project.status ?? extra.status ?? 'Projeto Exclusivo',
-    videoUrl: project.videoUrl ?? extra.videoUrl ?? '',
-    visible: project.visible !== undefined ? project.visible : (extra.visible !== false),
-    order: typeof project.order === 'number' ? project.order : (typeof extra.order === 'number' ? extra.order : 9999)
+    desc: rawDesc,
+    area: project.area || settingsMeta.area || embeddedMeta.area || '',
+    bedrooms: project.bedrooms || settingsMeta.bedrooms || embeddedMeta.bedrooms || '',
+    garage: project.garage || settingsMeta.garage || embeddedMeta.garage || '',
+    status: project.status || settingsMeta.status || embeddedMeta.status || 'Projeto Exclusivo',
+    videoUrl: project.videoUrl || settingsMeta.videoUrl || embeddedMeta.videoUrl || '',
+    visible: project.visible !== undefined
+      ? project.visible
+      : (settingsMeta.visible !== undefined ? settingsMeta.visible : (embeddedMeta.visible !== false)),
+    order: typeof project.order === 'number'
+      ? project.order
+      : (typeof settingsMeta.order === 'number' ? settingsMeta.order : (typeof embeddedMeta.order === 'number' ? embeddedMeta.order : 9999))
   };
 }
 
-// Compressão inteligente de imagens para WebP direto no navegador
-async function compressImageFile(file, maxWidth = 1920, quality = 0.86) {
-  if (!formCompressWebp || !formCompressWebp.checked) return file;
-  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return file;
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      let { width, height } = img;
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob((blob) => {
-        if (!blob) return resolve(file);
-        const baseName = file.name.replace(/\.[^/.]+$/, '');
-        const newFile = new File([blob], `${baseName}.webp`, { type: 'image/webp' });
-        resolve(newFile);
-      }, 'image/webp', quality);
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(file);
-    };
-
-    img.src = objectUrl;
-  });
-}
-
-// Converte uma URL de imagem já existente em File (para re-upload automático se o backend não tiver rota PUT)
-async function urlToFile(url, fallbackName = 'image.webp') {
+async function urlToFile(url, fallbackName = 'image.jpg') {
   const res = await fetch(url);
   const blob = await res.blob();
-  const ext = blob.type.split('/')[1] || 'webp';
-  return new File([blob], `${fallbackName}.${ext}`, { type: blob.type });
+  const ext = (blob.type && blob.type.split('/')[1]) ? blob.type.split('/')[1].replace('jpeg', 'jpg') : 'jpg';
+  return new File([blob], `${fallbackName}.${ext}`, { type: blob.type || 'image/jpeg' });
 }
 
 function handleUnauthorized() {
   localStorage.removeItem('adminToken');
-  loginScreen.style.display = 'block';
-  adminDashboard.style.display = 'none';
+  if (loginScreen) loginScreen.style.display = 'block';
+  if (adminDashboard) adminDashboard.style.display = 'none';
   alert('Sua sessão expirou. Faça login novamente.');
 }
 
@@ -166,18 +154,22 @@ function reloadLogoPreview(hasLogo = true) {
 }
 
 async function saveExtraSettingsMeta(updatedMetaMap) {
-  cachedSettings.projectMeta = updatedMetaMap;
-  await fetch('/api/settings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': localStorage.getItem('adminToken')
-    },
-    body: JSON.stringify({
-      ...cachedSettings,
-      projectMeta: updatedMetaMap
-    })
-  });
+  try {
+    cachedSettings.projectMeta = updatedMetaMap;
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': localStorage.getItem('adminToken')
+      },
+      body: JSON.stringify({
+        ...cachedSettings,
+        projectMeta: updatedMetaMap
+      })
+    });
+  } catch (e) {
+    console.warn('Não foi possível salvar metadados secundários em settings:', e);
+  }
 }
 
 async function fetchSettings() {
@@ -209,55 +201,57 @@ async function fetchSettings() {
 
 function startEditProject(project) {
   editingProject = project;
-  formProjectId.value = project.id;
-  formPanelTitle.innerText = 'Editar Projeto';
-  editModeBanner.style.display = 'flex';
-  editModeText.innerText = `Editando: ${project.title}`;
-  submitAdminBtn.innerText = 'Salvar Alterações do Projeto';
+  if (formProjectId) formProjectId.value = project.id;
+  if (formPanelTitle) formPanelTitle.innerText = 'Editar Projeto';
+  if (editModeBanner) editModeBanner.style.display = 'flex';
+  if (editModeText) editModeText.innerText = `Editando: ${project.title}`;
+  if (submitAdminBtn) submitAdminBtn.innerText = 'Salvar Alterações do Projeto';
 
-  formTitle.value = project.title || '';
-  formSubtitle.value = project.subtitle || '';
-  formLot.value = project.lotSize || '';
+  if (formTitle) formTitle.value = project.title || '';
+  if (formSubtitle) formSubtitle.value = project.subtitle || '';
+  if (formLot) formLot.value = project.lotSize || '';
 
   const lotMatch = (project.lotSize || '').match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)m?$/i);
-  if (lotMatch) {
-    formLotFront.value = lotMatch[1];
-    formLotDepth.value = lotMatch[2];
-  } else {
-    formLotFront.value = '';
-    formLotDepth.value = '';
+  if (formLotFront && formLotDepth) {
+    if (lotMatch) {
+      formLotFront.value = lotMatch[1];
+      formLotDepth.value = lotMatch[2];
+    } else {
+      formLotFront.value = '';
+      formLotDepth.value = '';
+    }
   }
 
-  formType.value = project.houseType || 'Térrea';
-  formArea.value = project.area || '';
-  formBedrooms.value = project.bedrooms || '';
-  formGarage.value = project.garage || '';
-  formStatus.value = project.status || 'Projeto Exclusivo';
-  formVideo.value = project.videoUrl || '';
-  formVisible.checked = project.visible !== false;
-  formDesc.value = project.desc || '';
+  if (formType) formType.value = project.houseType || 'Térrea';
+  if (formArea) formArea.value = project.area || '';
+  if (formBedrooms) formBedrooms.value = project.bedrooms || '';
+  if (formGarage) formGarage.value = project.garage || '';
+  if (formStatus) formStatus.value = project.status || 'Projeto Exclusivo';
+  if (formVideo) formVideo.value = project.videoUrl || '';
+  if (formVisible) formVisible.checked = project.visible !== false;
+  if (formDesc) formDesc.value = project.desc || '';
 
-  formFacade.required = false;
-  formPlan.required = false;
-  facadeEditHint.style.display = 'block';
-  planEditHint.style.display = 'block';
+  if (formFacade) formFacade.required = false;
+  if (formPlan) formPlan.required = false;
+  if (facadeEditHint) facadeEditHint.style.display = 'block';
+  if (planEditHint) planEditHint.style.display = 'block';
 
-  document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth' });
+  const panelEl = document.getElementById('form-panel') || adminForm;
+  if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth' });
 }
 
 function cancelEditProject() {
   editingProject = null;
-  formProjectId.value = '';
-  adminForm.reset();
-  formVisible.checked = true;
-  if (formCompressWebp) formCompressWebp.checked = true;
-  formPanelTitle.innerText = 'Cadastrar Novo Projeto';
-  editModeBanner.style.display = 'none';
-  submitAdminBtn.innerText = 'Cadastrar Projeto';
-  formFacade.required = true;
-  formPlan.required = true;
-  facadeEditHint.style.display = 'none';
-  planEditHint.style.display = 'none';
+  if (formProjectId) formProjectId.value = '';
+  if (adminForm) adminForm.reset();
+  if (formVisible) formVisible.checked = true;
+  if (formPanelTitle) formPanelTitle.innerText = 'Cadastrar Novo Projeto';
+  if (editModeBanner) editModeBanner.style.display = 'none';
+  if (submitAdminBtn) submitAdminBtn.innerText = 'Cadastrar Projeto';
+  if (formFacade) formFacade.required = true;
+  if (formPlan) formPlan.required = true;
+  if (facadeEditHint) facadeEditHint.style.display = 'none';
+  if (planEditHint) planEditHint.style.display = 'none';
 }
 
 if (cancelEditBtn) {
@@ -292,75 +286,39 @@ async function fetchAdminProjects() {
 
     cachedProjects.forEach((project, idx) => {
       const div = document.createElement('div');
-      div.className = 'project-item';
+      div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: rgba(0,0,0,0.45); padding: 1rem; border-radius: 0.65rem; border: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap;';
 
       const thumbUrl = (project.facades && project.facades[0]) ? project.facades[0] : (project.facade || '');
       const isHidden = project.visible === false;
 
       div.innerHTML = `
         <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 240px;">
-          ${thumbUrl ? `<img src="${thumbUrl}" alt="${project.title}" style="width: 76px; height: 56px; object-fit: cover; border-radius: 0.4rem; background: #111; opacity: ${isHidden ? '0.4' : '1'};" onerror="this.style.display='none'">` : ''}
+          ${thumbUrl ? `<img src="${thumbUrl}" alt="${project.title}" style="width: 72px; height: 54px; object-fit: cover; border-radius: 0.4rem; background: #111; opacity: ${isHidden ? '0.4' : '1'};" onerror="this.style.display='none'">` : ''}
           <div>
             <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
               <h3 style="margin: 0; font-size: 1.05rem; font-weight: 600; color: #fff;">${project.title || 'Sem título'}</h3>
-              ${isHidden ? '<span class="badge-info badge-hidden">Oculto na Galeria</span>' : ''}
+              ${isHidden ? '<span style="background:rgba(255,68,68,0.2);color:#ff7777;padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;">Oculto</span>' : ''}
             </div>
-            <p style="margin: 0.2rem 0; font-size: 0.85rem; color: #999;">
+            <p style="margin: 0.25rem 0; font-size: 0.85rem; color: #999;">
               Lote: <strong>${project.lotSize || 'N/A'}</strong> • ${project.houseType || 'N/A'} • ${project.subtitle || ''}
             </p>
-            <div>
-              ${project.area ? `<span class="badge-info">📐 ${project.area}</span>` : ''}
-              ${project.bedrooms ? `<span class="badge-info">🛏️ ${project.bedrooms}</span>` : ''}
-              ${project.garage ? `<span class="badge-info">🚗 ${project.garage}</span>` : ''}
-              ${project.status ? `<span class="badge-info">🏷️ ${project.status}</span>` : ''}
-              ${project.videoUrl ? `<span class="badge-info">🎬 Vídeo</span>` : ''}
+            <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem;">
+              ${project.area ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">📐 ${project.area}</span>` : ''}
+              ${project.bedrooms ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">🛏️ ${project.bedrooms}</span>` : ''}
+              ${project.garage ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">🚗 ${project.garage}</span>` : ''}
             </div>
           </div>
         </div>
-        <div class="project-actions">
-          <button type="button" class="action-btn up-btn" title="Mover para cima" ${idx === 0 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>↑</button>
-          <button type="button" class="action-btn down-btn" title="Mover para baixo" ${idx === cachedProjects.length - 1 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>↓</button>
-          <button type="button" class="action-btn toggle-vis-btn" title="Mostrar/Ocultar na Galeria">${isHidden ? 'Mostrar' : 'Ocultar'}</button>
-          <button type="button" class="action-btn edit-btn">Editar</button>
-          <button type="button" class="action-btn delete-btn">Excluir</button>
+        <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+          <button type="button" class="edit-btn" style="background: #2563eb; color: white; border: none; padding: 0.55rem 0.9rem; border-radius: 0.35rem; cursor: pointer; font-size: 0.78rem; font-weight: 700; text-transform: uppercase;">Editar</button>
+          <button type="button" class="delete-btn" style="background: #ff4444; color: white; border: none; padding: 0.55rem 0.9rem; border-radius: 0.35rem; cursor: pointer; font-size: 0.78rem; font-weight: 700; text-transform: uppercase;">Excluir</button>
         </div>
       `;
 
-      // Botão Subir Ordem
-      div.querySelector('.up-btn').addEventListener('click', async () => {
-        if (idx === 0) return;
-        await swapProjectOrder(idx, idx - 1);
-      });
-
-      // Botão Descer Ordem
-      div.querySelector('.down-btn').addEventListener('click', async () => {
-        if (idx >= cachedProjects.length - 1) return;
-        await swapProjectOrder(idx, idx + 1);
-      });
-
-      // Botão Mostrar/Ocultar
-      div.querySelector('.toggle-vis-btn').addEventListener('click', async () => {
-        const metaMap = { ...(cachedSettings.projectMeta || {}) };
-        metaMap[project.id] = {
-          ...(metaMap[project.id] || {}),
-          area: project.area,
-          bedrooms: project.bedrooms,
-          garage: project.garage,
-          status: project.status,
-          videoUrl: project.videoUrl,
-          order: idx,
-          visible: !isHidden ? false : true
-        };
-        await saveExtraSettingsMeta(metaMap);
-        await fetchAdminProjects();
-      });
-
-      // Botão Editar
       div.querySelector('.edit-btn').addEventListener('click', () => {
         startEditProject(project);
       });
 
-      // Botão Excluir
       const deleteBtn = div.querySelector('.delete-btn');
       deleteBtn.addEventListener('click', async () => {
         if (!confirm(`Tem certeza que deseja excluir o projeto "${project.title}"?`)) return;
@@ -375,12 +333,6 @@ async function fetchAdminProjects() {
           });
           if (delRes.status === 401 || delRes.status === 403) return handleUnauthorized();
           if (!delRes.ok) throw new Error('Falha ao excluir');
-
-          if (cachedSettings.projectMeta && cachedSettings.projectMeta[project.id]) {
-            const metaMap = { ...cachedSettings.projectMeta };
-            delete metaMap[project.id];
-            await saveExtraSettingsMeta(metaMap);
-          }
 
           if (editingProject && String(editingProject.id) === String(project.id)) {
             cancelEditProject();
@@ -401,35 +353,11 @@ async function fetchAdminProjects() {
   }
 }
 
-async function swapProjectOrder(indexA, indexB) {
-  const list = [...cachedProjects];
-  const temp = list[indexA];
-  list[indexA] = list[indexB];
-  list[indexB] = temp;
-
-  const metaMap = { ...(cachedSettings.projectMeta || {}) };
-  list.forEach((proj, idx) => {
-    metaMap[proj.id] = {
-      ...(metaMap[proj.id] || {}),
-      area: proj.area || '',
-      bedrooms: proj.bedrooms || '',
-      garage: proj.garage || '',
-      status: proj.status || 'Projeto Exclusivo',
-      videoUrl: proj.videoUrl || '',
-      visible: proj.visible !== false,
-      order: idx
-    };
-  });
-
-  await saveExtraSettingsMeta(metaMap);
-  await fetchAdminProjects();
-}
-
 async function checkAuth() {
   const token = localStorage.getItem('adminToken');
   if (!token) {
-    loginScreen.style.display = 'block';
-    adminDashboard.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'block';
+    if (adminDashboard) adminDashboard.style.display = 'none';
     return;
   }
 
@@ -440,13 +368,13 @@ async function checkAuth() {
     });
     if (!verifyRes.ok) {
       localStorage.removeItem('adminToken');
-      loginScreen.style.display = 'block';
-      adminDashboard.style.display = 'none';
+      if (loginScreen) loginScreen.style.display = 'block';
+      if (adminDashboard) adminDashboard.style.display = 'none';
       return;
     }
 
-    loginScreen.style.display = 'none';
-    adminDashboard.style.display = 'block';
+    if (loginScreen) loginScreen.style.display = 'none';
+    if (adminDashboard) adminDashboard.style.display = 'block';
     await fetchSettings();
     await fetchAdminProjects();
   } catch (err) {
@@ -486,43 +414,45 @@ if (adminForm) {
   adminForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const originalBtnText = submitAdminBtn.innerText;
-    submitAdminBtn.innerText = 'Processando imagens e salvando...';
-    submitAdminBtn.disabled = true;
+    const originalBtnText = submitAdminBtn ? submitAdminBtn.innerText : 'Upload Project';
+    if (submitAdminBtn) {
+      submitAdminBtn.innerText = 'Enviando...';
+      submitAdminBtn.disabled = true;
+    }
 
     try {
-      const normalizedLot = normalizeLotSize(formLot.value);
+      const titleVal = formTitle ? formTitle.value.trim() : '';
+      const subtitleVal = formSubtitle ? formSubtitle.value.trim() : '';
+      const lotVal = formLot ? normalizeLotSize(formLot.value) : '';
+      const typeVal = formType ? formType.value : 'Térrea';
+      const cleanDesc = formDesc ? formDesc.value.trim() : '';
+
       const extraMeta = {
-        area: formArea.value.trim(),
-        bedrooms: formBedrooms.value.trim(),
-        garage: formGarage.value.trim(),
-        status: formStatus.value,
-        videoUrl: formVideo.value.trim(),
-        visible: Boolean(formVisible.checked),
+        area: formArea ? formArea.value.trim() : '',
+        bedrooms: formBedrooms ? formBedrooms.value.trim() : '',
+        garage: formGarage ? formGarage.value.trim() : '',
+        status: formStatus ? formStatus.value : 'Projeto Exclusivo',
+        videoUrl: formVideo ? formVideo.value.trim() : '',
+        visible: formVisible ? Boolean(formVisible.checked) : true,
         order: editingProject && typeof editingProject.order === 'number' ? editingProject.order : cachedProjects.length
       };
 
-      const formData = new FormData();
-      formData.append('title', formTitle.value.trim());
-      formData.append('subtitle', formSubtitle.value.trim());
-      formData.append('lotSize', normalizedLot);
-      formData.append('houseType', formType.value);
-      formData.append('desc', formDesc.value.trim());
-      formData.append('area', extraMeta.area);
-      formData.append('bedrooms', extraMeta.bedrooms);
-      formData.append('garage', extraMeta.garage);
-      formData.append('status', extraMeta.status);
-      formData.append('videoUrl', extraMeta.videoUrl);
-      formData.append('visible', String(extraMeta.visible));
-      formData.append('order', String(extraMeta.order));
+      // Embute os metadados extras na descrição de forma invisível e mantém apenas os 5 campos que o server.cjs espera
+      const packedDesc = packDescriptionWithMeta(cleanDesc, extraMeta);
 
-      const facadeFiles = formFacade.files;
-      const planFiles = formPlan.files;
+      const formData = new FormData();
+      formData.append('title', titleVal);
+      formData.append('subtitle', subtitleVal);
+      formData.append('lotSize', lotVal);
+      formData.append('houseType', typeVal);
+      formData.append('desc', packedDesc);
+
+      const facadeFiles = formFacade ? formFacade.files : [];
+      const planFiles = formPlan ? formPlan.files : [];
 
       if (facadeFiles.length > 0) {
-        for (let i = 0; i < Math.min(facadeFiles.length, 5); i++) {
-          const compressed = await compressImageFile(facadeFiles[i]);
-          formData.append('facades', compressed);
+        for (let i = 0; i < facadeFiles.length; i++) {
+          formData.append('facades', facadeFiles[i]);
         }
       } else if (editingProject) {
         const existingFacades = editingProject.facades || [editingProject.facade].filter(Boolean);
@@ -533,9 +463,8 @@ if (adminForm) {
       }
 
       if (planFiles.length > 0) {
-        for (let i = 0; i < Math.min(planFiles.length, 3); i++) {
-          const compressed = await compressImageFile(planFiles[i]);
-          formData.append('plans', compressed);
+        for (let i = 0; i < planFiles.length; i++) {
+          formData.append('plans', planFiles[i]);
         }
       } else if (editingProject) {
         const existingPlans = editingProject.plans || [editingProject.plan].filter(Boolean);
@@ -545,53 +474,34 @@ if (adminForm) {
         }
       }
 
-      let savedProject = null;
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Authorization': localStorage.getItem('adminToken') },
+        body: formData
+      });
 
-      if (editingProject) {
-        // Tenta rota PUT nativa primeiro; se o server.cjs for o antigo (404), recria via POST e remove o antigo
-        const putRes = await fetch(`/api/projects/${editingProject.id}`, {
-          method: 'PUT',
-          headers: { 'Authorization': localStorage.getItem('adminToken') },
-          body: formData
-        });
-
-        if (putRes.status === 401 || putRes.status === 403) return handleUnauthorized();
-
-        if (putRes.ok) {
-          savedProject = await putRes.json();
-        } else {
-          const postRes = await fetch('/api/projects', {
-            method: 'POST',
-            headers: { 'Authorization': localStorage.getItem('adminToken') },
-            body: formData
-          });
-          if (postRes.status === 401 || postRes.status === 403) return handleUnauthorized();
-          if (!postRes.ok) throw new Error('Falha ao atualizar projeto');
-          savedProject = await postRes.json();
-
-          await fetch(`/api/projects/${editingProject.id}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': localStorage.getItem('adminToken') }
-          });
-        }
-      } else {
-        const res = await fetch('/api/projects', {
-          method: 'POST',
-          headers: { 'Authorization': localStorage.getItem('adminToken') },
-          body: formData
-        });
-        if (res.status === 401 || res.status === 403) return handleUnauthorized();
-        if (!res.ok) throw new Error('Upload failed');
-        savedProject = await res.json();
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || `Erro HTTP ${res.status}`);
       }
 
-      const targetId = (savedProject && savedProject.id) ? savedProject.id : (editingProject ? editingProject.id : null);
-      if (targetId) {
+      let savedProject = null;
+      try {
+        savedProject = await res.json();
+      } catch (e) {}
+
+      // Se estávamos editando um projeto existente, remove a versão anterior após criar a nova com sucesso
+      if (editingProject && editingProject.id) {
+        await fetch(`/api/projects/${editingProject.id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': localStorage.getItem('adminToken') }
+        });
+      }
+
+      if (savedProject && savedProject.id) {
         const metaMap = { ...(cachedSettings.projectMeta || {}) };
-        if (editingProject && String(editingProject.id) !== String(targetId)) {
-          delete metaMap[editingProject.id];
-        }
-        metaMap[targetId] = extraMeta;
+        metaMap[savedProject.id] = extraMeta;
         await saveExtraSettingsMeta(metaMap);
       }
 
@@ -599,11 +509,13 @@ if (adminForm) {
       cancelEditProject();
       await fetchAdminProjects();
     } catch (err) {
-      console.error(err);
-      alert('Falha ao salvar o projeto.');
+      console.error('Erro detalhado ao salvar projeto:', err);
+      alert(`Falha ao salvar o projeto: ${err.message || 'Verifique o tamanho das imagens (máx 5 fachadas e 3 plantas).'}`);
     } finally {
-      submitAdminBtn.innerText = editingProject ? 'Salvar Alterações do Projeto' : 'Cadastrar Projeto';
-      submitAdminBtn.disabled = false;
+      if (submitAdminBtn) {
+        submitAdminBtn.innerText = editingProject ? 'Salvar Alterações do Projeto' : originalBtnText;
+        submitAdminBtn.disabled = false;
+      }
     }
   });
 }
@@ -673,14 +585,14 @@ if (settingsForm) {
     e.preventDefault();
     const payload = {
       ...cachedSettings,
-      instagram: formInstagram.value.trim(),
-      instagramEnabled: Boolean(formInstagramEnabled.checked),
-      facebook: formFacebook.value.trim(),
-      facebookEnabled: Boolean(formFacebookEnabled.checked),
-      youtube: formYoutube.value.trim(),
-      youtubeEnabled: Boolean(formYoutubeEnabled.checked),
-      whatsapp: formWhatsapp.value.trim(),
-      whatsappEnabled: Boolean(formWhatsappEnabled.checked),
+      instagram: formInstagram ? formInstagram.value.trim() : '',
+      instagramEnabled: formInstagramEnabled ? Boolean(formInstagramEnabled.checked) : true,
+      facebook: formFacebook ? formFacebook.value.trim() : '',
+      facebookEnabled: formFacebookEnabled ? Boolean(formFacebookEnabled.checked) : true,
+      youtube: formYoutube ? formYoutube.value.trim() : '',
+      youtubeEnabled: formYoutubeEnabled ? Boolean(formYoutubeEnabled.checked) : true,
+      whatsapp: formWhatsapp ? formWhatsapp.value.trim() : '',
+      whatsappEnabled: formWhatsappEnabled ? Boolean(formWhatsappEnabled.checked) : true,
       address: formAddress ? formAddress.value.trim() : 'Avenida Centenário 520, Maringá - PR'
     };
 
