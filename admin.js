@@ -170,22 +170,34 @@ if (deleteLogoBtn) {
   });
 }
 
-// --- SETTINGS LOGIC ---
+// --- SETTINGS (REDES SOCIAIS) LOGIC ---
 const settingsForm = document.getElementById('settings-form');
 const formInstagram = document.getElementById('form-instagram');
+const formInstagramEnabled = document.getElementById('form-instagram-enabled');
 const formFacebook = document.getElementById('form-facebook');
+const formFacebookEnabled = document.getElementById('form-facebook-enabled');
 const formYoutube = document.getElementById('form-youtube');
+const formYoutubeEnabled = document.getElementById('form-youtube-enabled');
 const formWhatsapp = document.getElementById('form-whatsapp');
+const formWhatsappEnabled = document.getElementById('form-whatsapp-enabled');
 const submitSettingsBtn = document.getElementById('submit-settings-btn');
 
 async function fetchSettings() {
   try {
     const res = await fetch('/api/settings');
     const data = await res.json();
+    
     formInstagram.value = data.instagram || '';
+    formInstagramEnabled.checked = data.instagramEnabled !== false;
+
     formFacebook.value = data.facebook || '';
+    formFacebookEnabled.checked = data.facebookEnabled !== false;
+
     formYoutube.value = data.youtube || '';
+    formYoutubeEnabled.checked = data.youtubeEnabled !== false;
+
     formWhatsapp.value = data.whatsapp || '';
+    formWhatsappEnabled.checked = data.whatsappEnabled !== false;
   } catch (err) {
     console.error(err);
   }
@@ -194,10 +206,14 @@ async function fetchSettings() {
 settingsForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const payload = {
-    instagram: formInstagram.value,
-    facebook: formFacebook.value,
-    youtube: formYoutube.value,
-    whatsapp: formWhatsapp.value
+    instagram: formInstagram.value.trim(),
+    instagramEnabled: formInstagramEnabled.checked,
+    facebook: formFacebook.value.trim(),
+    facebookEnabled: formFacebookEnabled.checked,
+    youtube: formYoutube.value.trim(),
+    youtubeEnabled: formYoutubeEnabled.checked,
+    whatsapp: formWhatsapp.value.trim(),
+    whatsappEnabled: formWhatsappEnabled.checked
   };
 
   const originalBtnText = submitSettingsBtn.innerText;
@@ -215,7 +231,7 @@ settingsForm.addEventListener('submit', async (e) => {
     });
 
     if (!res.ok) throw new Error('Failed to save');
-    alert('Configurações salvas!');
+    alert('Configurações de redes sociais salvas com sucesso!');
   } catch (err) {
     alert('Falha ao salvar (Autorização negada?).');
   } finally {

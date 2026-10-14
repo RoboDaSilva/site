@@ -29,9 +29,13 @@ if (!fs.existsSync(PASSWORD_FILE)) {
 if (!fs.existsSync(SETTINGS_FILE)) {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
     instagram: '',
+    instagramEnabled: true,
     facebook: '',
+    facebookEnabled: true,
     youtube: '',
-    whatsapp: ''
+    youtubeEnabled: true,
+    whatsapp: '',
+    whatsappEnabled: true
   }, null, 2), 'utf8');
 }
 
@@ -135,24 +139,44 @@ app.delete('/api/logo', requireAuth, (req, res) => {
   }
 });
 
-// --- SETTINGS ROUTES ---
+// --- SETTINGS (REDES SOCIAIS) ROUTES ---
 app.get('/api/settings', (req, res) => {
   try {
     const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     res.json(settings);
   } catch (err) {
-    res.json({});
+    res.json({
+      instagram: '',
+      instagramEnabled: true,
+      facebook: '',
+      facebookEnabled: true,
+      youtube: '',
+      youtubeEnabled: true,
+      whatsapp: '',
+      whatsappEnabled: true
+    });
   }
 });
 
 app.post('/api/settings', requireAuth, (req, res) => {
-  const { instagram, facebook, youtube, whatsapp } = req.body || {};
+  const { 
+    instagram, instagramEnabled, 
+    facebook, facebookEnabled, 
+    youtube, youtubeEnabled, 
+    whatsapp, whatsappEnabled 
+  } = req.body || {};
+
   const settings = {
     instagram: instagram || '',
+    instagramEnabled: instagramEnabled !== false,
     facebook: facebook || '',
+    facebookEnabled: facebookEnabled !== false,
     youtube: youtube || '',
-    whatsapp: whatsapp || ''
+    youtubeEnabled: youtubeEnabled !== false,
+    whatsapp: whatsapp || '',
+    whatsappEnabled: whatsappEnabled !== false
   };
+
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
   res.json({ success: true, settings });
 });
@@ -206,7 +230,6 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
     const id = Number(req.params.id);
     let projects = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     
-    // Find project to clean up associated files
     const projToDelete = projects.find(p => p.id === id);
     if (projToDelete) {
       const files = [...(projToDelete.facades || []), ...(projToDelete.plans || [])];

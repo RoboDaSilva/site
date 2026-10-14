@@ -12,6 +12,10 @@
       .login-container { max-width: 400px; margin: 100px auto; text-align: center; }
       .panel { background: rgba(20,20,20,0.8); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem; backdrop-filter: blur(10px); }
       h1, h2 { color: white; margin-bottom: 1.5rem; }
+      .social-input-row { display: flex; align-items: center; gap: 1rem; }
+      .social-input-row input[type="url"] { flex: 1; }
+      .social-toggle-label { display: flex; align-items: center; gap: 0.5rem; color: #ccc; font-size: 0.9rem; cursor: pointer; white-space: nowrap; }
+      .social-toggle-label input[type="checkbox"] { width: 1.2rem; height: 1.2rem; cursor: pointer; accent-color: #fff; }
     </style>
   </head>
   <body>
@@ -105,22 +109,42 @@
         <h2>Configurar Redes Sociais</h2>
         <form id="settings-form">
             <div class="form-group">
-              <label>Instagram URL</label>
-              <input type="url" id="form-instagram" placeholder="https://instagram.com/..." />
+              <label>Instagram</label>
+              <div class="social-input-row">
+                <input type="url" id="form-instagram" placeholder="https://instagram.com/..." />
+                <label class="social-toggle-label">
+                  <input type="checkbox" id="form-instagram-enabled" checked /> Ativo
+                </label>
+              </div>
             </div>
             <div class="form-group">
-              <label>Facebook URL</label>
-              <input type="url" id="form-facebook" placeholder="https://facebook.com/..." />
+              <label>Facebook</label>
+              <div class="social-input-row">
+                <input type="url" id="form-facebook" placeholder="https://facebook.com/..." />
+                <label class="social-toggle-label">
+                  <input type="checkbox" id="form-facebook-enabled" checked /> Ativo
+                </label>
+              </div>
             </div>
             <div class="form-group">
-              <label>YouTube URL</label>
-              <input type="url" id="form-youtube" placeholder="https://youtube.com/..." />
+              <label>YouTube</label>
+              <div class="social-input-row">
+                <input type="url" id="form-youtube" placeholder="https://youtube.com/..." />
+                <label class="social-toggle-label">
+                  <input type="checkbox" id="form-youtube-enabled" checked /> Ativo
+                </label>
+              </div>
             </div>
             <div class="form-group">
-              <label>WhatsApp Link</label>
-              <input type="url" id="form-whatsapp" placeholder="https://wa.me/..." />
+              <label>WhatsApp</label>
+              <div class="social-input-row">
+                <input type="url" id="form-whatsapp" placeholder="https://wa.me/..." />
+                <label class="social-toggle-label">
+                  <input type="checkbox" id="form-whatsapp-enabled" checked /> Ativo
+                </label>
+              </div>
             </div>
-            <button type="submit" class="submit-btn" id="submit-settings-btn">Salvar</button>
+            <button type="submit" class="submit-btn" id="submit-settings-btn">Salvar Redes Sociais</button>
         </form>
       </div>
 

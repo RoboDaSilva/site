@@ -409,15 +409,26 @@ const linkFacebook = document.getElementById('link-facebook');
 const linkYoutube = document.getElementById('link-youtube');
 const linkWhatsapp = document.getElementById('link-whatsapp');
 
+const updateSocialLink = (element, url, enabled) => {
+  if (!element) return;
+  // If explicitly disabled or url is empty, hide the icon completely
+  if (enabled === false || !url || url.trim() === '' || url.trim() === '#') {
+    element.style.display = 'none';
+  } else {
+    element.style.display = 'inline-flex';
+    element.href = url.trim();
+  }
+};
+
 const fetchSettings = async () => {
   try {
     const res = await fetch('/api/settings');
     const data = await res.json();
     
-    if(linkInstagram) linkInstagram.href = data.instagram || '#';
-    if(linkFacebook) linkFacebook.href = data.facebook || '#';
-    if(linkYoutube) linkYoutube.href = data.youtube || '#';
-    if(linkWhatsapp) linkWhatsapp.href = data.whatsapp || '#';
+    updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
+    updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
+    updateSocialLink(linkYoutube, data.youtube, data.youtubeEnabled);
+    updateSocialLink(linkWhatsapp, data.whatsapp, data.whatsappEnabled);
   } catch (err) {
     console.error('Failed to fetch settings', err);
   }
