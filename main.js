@@ -631,10 +631,17 @@ const initApp = async () => {
       const data = await settingsRes.json();
       siteSettings = data || {};
 
-      const defaultWhats = 'https://wa.me/5544998641000?text=Ol%C3%A1!%20Encontrei%20a%20construtora%20no%20Google,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es.';
-      const whatsUrl = (data.whatsapp && data.whatsapp.includes('wa.me') && !data.whatsapp.includes('?text='))
-        ? `${data.whatsapp.replace(/\/$/, '')}?text=Ol%C3%A1!%20Encontrei%20a%20construtora%20no%20Google,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es.`
-        : (data.whatsapp || defaultWhats);
+      let cleanNumber = '5544998641000';
+      if (data.whatsapp) {
+        const match = data.whatsapp.match(/(\d{10,15})/);
+        if (match) cleanNumber = match[1];
+      }
+
+      const customMsg = data.whatsappMsg !== undefined && data.whatsappMsg !== ''
+        ? data.whatsappMsg
+        : 'Olá! Encontrei a construtora no Google, gostaria de mais informações.';
+
+      const whatsUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(customMsg)}`;
 
       updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
       updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
@@ -654,6 +661,19 @@ const initApp = async () => {
         }
       });
     }
+
+    if (projectsRes.ok) {
+      const rawProjects = await projectsRes.json();
+      allProjects = mergeProjectMeta(rawProjects, siteSettings);
+      buildGallery(allProjects);
+    } else {
+      buildGallery([]);
+    }
+  } catch (err) {
+    console.error('Failed to initialize gallery', err);
+    buildGallery([]);
+  }
+};
 
     if (projectsRes.ok) {
       const rawProjects = await projectsRes.json();
