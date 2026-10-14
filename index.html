@@ -190,6 +190,7 @@
     /* Garante que o overlay de detalhes funcione e role suavemente no iPhone */
     #detail-overlay {
       -webkit-overflow-scrolling: touch;
+      box-sizing: border-box;
     }
 
     #detail-overlay.active-detail {
@@ -197,7 +198,15 @@
       z-index: 999 !important;
     }
 
-    /* Badges da Ficha Técnica na Página de Detalhes */
+    /* Estilos Gerais da Descrição e Ficha Técnica (Desktop) */
+    #detail-desc {
+      text-align: justify;
+      text-justify: inter-word;
+      font-size: 1.05rem;
+      line-height: 1.85;
+      color: #dfdfdf;
+    }
+
     .specs-badges-container {
       display: flex;
       flex-wrap: wrap;
@@ -206,35 +215,41 @@
     }
 
     .spec-badge {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.09);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       color: #fff;
-      padding: 0.45rem 0.9rem;
+      padding: 0.5rem 1rem;
       border-radius: 2rem;
-      font-size: 0.85rem;
+      font-size: 0.92rem;
       font-weight: 500;
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 0.5rem;
     }
 
-    /* Botão de Orçamento WhatsApp dentro do Projeto */
+    /* Botão de Orçamento WhatsApp (Desktop) */
     .project-whatsapp-cta {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 0.65rem;
+      gap: 0.75rem;
       background: #25D366;
       color: #050505;
       font-weight: 700;
-      font-size: 0.9rem;
+      font-size: 0.95rem;
       text-decoration: none;
-      padding: 0.95rem 1.5rem;
+      padding: 1rem 1.75rem;
       border-radius: 0.6rem;
-      margin-top: 1.5rem;
+      margin-top: 1.75rem;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       transition: transform 0.2s, opacity 0.2s;
+    }
+
+    .project-whatsapp-cta svg {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
     }
 
     .project-whatsapp-cta:hover {
@@ -262,7 +277,7 @@
       border: 0;
     }
 
-    /* Responsividade para Celular (resolve a sobreposição da logo) */
+    /* Responsividade para Celular / Mobile */
     @media (max-width: 768px) {
       .header {
         padding: 1.25rem 1.25rem !important;
@@ -293,6 +308,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
+        padding: 1rem 1.25rem;
       }
 
       #back-btn {
@@ -300,10 +316,55 @@
         padding: 0.5rem 0.9rem !important;
       }
 
-      .project-whatsapp-cta {
-        width: 100%;
+      /* Ajustes específicos para a tela de Detalhes no Celular */
+      .detail-content {
+        padding: 1.25rem !important;
+        max-width: 100% !important;
         box-sizing: border-box;
+      }
+
+      .detail-title {
+        font-size: 1.85rem !important;
+        line-height: 1.2;
+        word-break: break-word;
+      }
+
+      .detail-subtitle {
+        font-size: 0.9rem !important;
+        margin-bottom: 1.25rem !important;
+      }
+
+      #detail-desc {
+        font-size: 0.95rem !important;
+        text-align: justify !important;
+        text-justify: inter-word !important;
+        line-height: 1.7;
+      }
+
+      .spec-badge {
+        font-size: 0.8rem !important;
+        padding: 0.35rem 0.75rem !important;
+      }
+
+      .project-whatsapp-cta {
+        width: 100% !important;
+        box-sizing: border-box !important;
         text-align: center;
+        font-size: 0.88rem !important;
+        padding: 0.9rem 1rem !important;
+      }
+
+      /* Aumenta o ícone do WhatsApp no botão mobile */
+      .project-whatsapp-cta svg {
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        min-height: 28px !important;
+      }
+
+      #detail-facades-container img,
+      #detail-plans-container img {
+        border-radius: 0.75rem !important;
       }
     }
   </style>
@@ -360,7 +421,7 @@
         <a href="#" id="link-youtube" target="_blank" aria-label="YouTube">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg>
         </a>
-        <a href="https://wa.me/5544998641000?text=Ol%C3%A1!%20Encontrei%20a%20construtora%20no%20Google,%20gostaria%20de%20mais%20informa%C3%A7%C3%B5es." id="link-whatsapp" target="_blank" aria-label="WhatsApp">
+        <a href="https://wa.me/5544998641000?text=Olá! Encontrei a construtora no Google, gostaria de mais informações." id="link-whatsapp" target="_blank" aria-label="WhatsApp">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
             <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
@@ -387,10 +448,10 @@
         <div class="detail-grid">
           <div class="detail-text">
             <div id="detail-specs" class="specs-badges-container"></div>
-            <p id="detail-desc" style="line-height: 1.75; white-space: pre-line;"></p>
+            <p id="detail-desc"></p>
 
             <a id="detail-whatsapp-btn" href="#" target="_blank" class="project-whatsapp-cta">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                 <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
                 <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
