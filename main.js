@@ -358,7 +358,6 @@ const openDetail = (card) => {
   detailSubtitle.innerText = data.subtitle || '';
   detailDesc.innerText = data.desc || '';
 
-  // Monta os Badges da Ficha Técnica
   detailSpecs.innerHTML = '';
   const badges = [
     data.houseType ? `🏠 ${data.houseType}` : null,
@@ -376,7 +375,6 @@ const openDetail = (card) => {
     detailSpecs.appendChild(span);
   });
 
-  // Configura botão de WhatsApp dinâmico com o nome do projeto
   if (detailWhatsappBtn) {
     let basePhone = '5544998641000';
     if (siteSettings.whatsapp) {
@@ -392,7 +390,6 @@ const openDetail = (card) => {
     };
   }
 
-  // Configura vídeo do YouTube se cadastrado
   if (detailVideoWrapper) {
     const embedUrl = getYoutubeEmbedUrl(data.videoUrl);
     if (embedUrl) {
@@ -622,12 +619,8 @@ const updateSocialLink = (element, url, enabled) => {
 
 const initApp = async () => {
   try {
-    const [settingsRes, projectsRes] = await Promise.all([
-      fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' }),
-      fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' })
-    ]);
-
-    if (settingsRes.ok) {
+    const settingsRes = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    if (settingsRes && settingsRes.ok) {
       const data = await settingsRes.json();
       siteSettings = data || {};
 
@@ -662,7 +655,8 @@ const initApp = async () => {
       });
     }
 
-    if (projectsRes.ok) {
+    const projectsRes = await fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    if (projectsRes && projectsRes.ok) {
       const rawProjects = await projectsRes.json();
       allProjects = mergeProjectMeta(rawProjects, siteSettings);
       buildGallery(allProjects);
@@ -670,20 +664,7 @@ const initApp = async () => {
       buildGallery([]);
     }
   } catch (err) {
-    console.error('Failed to initialize gallery', err);
-    buildGallery([]);
-  }
-};
-
-    if (projectsRes.ok) {
-      const rawProjects = await projectsRes.json();
-      allProjects = mergeProjectMeta(rawProjects, siteSettings);
-      buildGallery(allProjects);
-    } else {
-      buildGallery([]);
-    }
-  } catch (err) {
-    console.error('Failed to initialize gallery', err);
+    console.error('Erro ao inicializar:', err);
     buildGallery([]);
   }
 };
