@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,7 +19,6 @@
     </style>
   </head>
   <body>
-    <!-- Login Screen -->
     <div id="login-screen" class="login-container panel">
       <h2>Admin Login</h2>
       <form id="login-form">
@@ -30,7 +29,6 @@
       </form>
     </div>
 
-    <!-- Admin Dashboard -->
     <div id="admin-dashboard" class="admin-container">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
         <h1 style="margin: 0;">Painel de Administração</h1>
@@ -46,7 +44,7 @@
             </div>
             <div class="form-group">
               <label>Location & Year</label>
-              <input type="text" id="form-subtitle" required placeholder="e.g. Los Angeles, 2026" />
+              <input type="text" id="form-subtitle" required placeholder="e.g. Maringá, 2026" />
             </div>
             <div class="form-group" style="display: flex; gap: 1rem;">
               <div style="flex: 1;">
@@ -84,13 +82,12 @@
         </div>
       </div>
 
-      <!-- Gerenciamento da Logo -->
       <div class="panel">
         <h2>Logotipo do Site</h2>
         <div style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem;">
           <div style="background: rgba(255,255,255,0.05); padding: 1rem 1.5rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.1); min-width: 200px;">
             <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #888;">Logo Atual:</p>
-            <img id="current-logo-preview" src="/images/logo.png" alt="Logo Geminadas" style="height: 48px; max-width: 100%; object-fit: contain; display: block;" onerror="this.style.display='none'; document.getElementById('no-logo-text').style.display='block';" onload="this.style.display='block'; document.getElementById('no-logo-text').style.display='none';">
+            <img id="current-logo-preview" src="/images/logo.png" alt="Logo Level Construtora" style="height: 48px; max-width: 100%; object-fit: contain; display: block;" onerror="this.style.display='none'; document.getElementById('no-logo-text').style.display='block';" onload="this.style.display='block'; document.getElementById('no-logo-text').style.display='none';">
             <span id="no-logo-text" style="color: #888; font-size: 0.9rem; display: none;">Nenhuma logo carregada</span>
           </div>
           <button type="button" id="delete-logo-btn" style="background: #ff4444; color: white; border: none; padding: 0.75rem 1.25rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">Remover Logo</button>

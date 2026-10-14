@@ -1,7 +1,6 @@
-import * as THREE from 'three';
+﻿import * as THREE from 'three';
 import gsap from 'gsap';
 
-// --- SETUP ---
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
@@ -24,12 +23,12 @@ const cardGeometry = new THREE.PlaneGeometry(5.4, 4.5);
 let cards = [];
 let radius = 12;
 
-// --- DATA FETCHING & GALLERY BUILD ---
 let allProjects = [];
 
 const fetchProjects = async () => {
   try {
-    const res = await fetch('/api/projects');
+    const res = await fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return [];
     return await res.json();
   } catch (err) {
     console.error('Failed to fetch projects', err);
@@ -38,119 +37,139 @@ const fetchProjects = async () => {
 };
 
 const buildGallery = (projects) => {
-  while(galleryGroup.children.length > 0){ 
-      const child = galleryGroup.children[0];
-      
-      if (child.material) {
-        if (child.material.map) child.material.map.dispose();
-        child.material.dispose();
+  while (galleryGroup.children.length > 0) {
+    const child = galleryGroup.children[0];
+    if (child.material) {
+      if (child.material.map) child.material.map.dispose();
+      child.material.dispose();
+    }
+    child.children.forEach(subchild => {
+      if (subchild.material) {
+        if (subchild.material.map) subchild.material.map.dispose();
+        subchild.material.dispose();
       }
-      
-      child.children.forEach(subchild => {
-        if (subchild.material) {
-          if (subchild.material.map) subchild.material.map.dispose();
-          subchild.material.dispose();
-        }
-        if (subchild.geometry) subchild.geometry.dispose();
-      });
-
-      galleryGroup.remove(child); 
+      if (subchild.geometry) subchild.geometry.dispose();
+    });
+    galleryGroup.remove(child);
   }
   cards = [];
-  
-  let galleryItems = [];
-  if (projects && projects.length > 0) {
-    const count = projects.length;
-    for (let i = 0; i < count; i++) {
-      galleryItems.push({
-        ...projects[i],
-        uniqueId: i
-      });
-    }
-    radius = Math.max(8, 2.8 * Math.sqrt(count));
-  } else {
+
+  const galleryItems = (projects || []).filter(p => {
+    const facadePath = p.facades ? p.facades[0] : p.facade;
+    return Boolean(facadePath);
+  });
+
+  if (galleryItems.length === 0) {
     if (loaderEl) {
-      loaderEl.innerText = "No projects found";
+      loaderEl.innerText = 'Nenhum projeto cadastrado';
       loaderEl.style.display = 'block';
       gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
     }
     return;
   }
 
-  let loadedCount = 0;
-  loaderEl.style.display = 'block';
-  gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
+  const count = galleryItems.length;
+  radius = Math.max(8, 2.8 * Math.sqrt(count));
+
+  let processedCount = 0;
+  if (loaderEl) {
+    loaderEl.innerText = 'Carregando Galeria...';
+    loaderEl.style.display = 'block';
+    gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
+  }
+
+  const checkDone = () => {
+    processedCount++;
+    if (processedCount >= galleryItems.length && loaderEl) {
+      gsap.to(loaderEl, {
+        opacity: 0,
+        duration: 0.5,
+        onComplete: () => { loaderEl.style.display = 'none'; }
+      });
+    }
+  };
 
   galleryItems.forEach((item, index) => {
-    const facadePath = item.facades ? item.facades[0] : item.facade;
-    const imgUrl = facadePath;
-    if (!imgUrl) return;
-    
-    textureLoader.load(imgUrl, (texture) => {
-      texture.generateMipmaps = true;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      
-      const material = new THREE.MeshBasicMaterial({ 
-        map: texture, 
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0
-      });
-      
-      const card = new THREE.Mesh(cardGeometry, material);
-      card.userData = item;
+    const imgUrl = item.facades ? item.facades[0] : item.facade;
 
-      let textMaterial = null;
-      if (item.lotSize) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 128;
-        const context = canvas.getContext('2d');
-        context.font = "300 36px Inter, sans-serif";
-        context.fillStyle = "rgba(255, 255, 255, 0.7)";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.fillText(`Lote: ${item.lotSize}`, 256, 64);
-        
-        const textTexture = new THREE.CanvasTexture(canvas);
-        textTexture.minFilter = THREE.LinearFilter;
-        
-        textMaterial = new THREE.MeshBasicMaterial({ map: textTexture, transparent: true, opacity: 0 });
-        const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), textMaterial);
-        textPlane.position.y = -2.8;
-        
-        card.add(textPlane);
+    textureLoader.load(
+      imgUrl,
+      (texture) => {
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0
+        });
+
+        const card = new THREE.Mesh(cardGeometry, material);
+        card.userData = item;
+
+        let textMaterial = null;
+        if (item.lotSize) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 512;
+          canvas.height = 128;
+          const context = canvas.getContext('2d');
+          context.font = '300 36px Inter, sans-serif';
+          context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          context.fillText(`Lote: ${item.lotSize}`, 256, 64);
+
+          const textTexture = new THREE.CanvasTexture(canvas);
+          textTexture.minFilter = THREE.LinearFilter;
+
+          textMaterial = new THREE.MeshBasicMaterial({ map: textTexture, transparent: true, opacity: 0 });
+          const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), textMaterial);
+          textPlane.position.y = -2.8;
+          card.add(textPlane);
+        }
+
+        let phi = Math.PI / 2;
+        let theta = Math.PI;
+
+        if (count === 1) {
+          phi = Math.PI / 2;
+          theta = Math.PI;
+        } else if (count <= 4) {
+          phi = Math.PI / 2;
+          theta = Math.PI + (index * (2 * Math.PI)) / count;
+        } else {
+          const maxVerticalSpread = Math.min(0.75, count * 0.08);
+          const h = -maxVerticalSpread + (2 * maxVerticalSpread * index) / (count - 1);
+          phi = Math.acos(h);
+          theta = Math.sqrt(count * Math.PI) * phi;
+        }
+
+        card.position.setFromSphericalCoords(radius, phi, theta);
+        card.lookAt(0, 0, 0);
+
+        galleryGroup.add(card);
+        cards.push(card);
+
+        const delay = Math.random() * 0.4;
+        gsap.to(material, { opacity: 1, duration: 1, delay });
+        if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 1, delay });
+
+        checkDone();
+      },
+      undefined,
+      () => {
+        checkDone();
       }
-
-      const h = -0.85 + (1.7 * index) / Math.max(1, galleryItems.length - 1);
-      const phi = Math.acos(h);
-      const theta = Math.sqrt(galleryItems.length * Math.PI) * phi;
-
-      card.position.setFromSphericalCoords(radius, phi, theta);
-      card.lookAt(0, 0, 0);
-
-      galleryGroup.add(card);
-      cards.push(card);
-
-      const delay = Math.random() * 0.5;
-      gsap.to(material, { opacity: 1, duration: 1, delay });
-      if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 1, delay });
-
-      loadedCount++;
-      if (loadedCount === galleryItems.length) {
-        gsap.to(loaderEl, { opacity: 0, duration: 0.5, onComplete: () => loaderEl.style.display = 'none' });
-      }
-    });
+    );
   });
 };
 
-// Initialize
 fetchProjects().then(data => {
   allProjects = data;
   buildGallery(data);
 });
 
-// --- INTERACTIONS ---
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let targetRotation = { x: 0, y: 0 };
@@ -174,14 +193,14 @@ const onPointerDown = (e) => {
 
 const onPointerMove = (e) => {
   if (isDetailView) return;
-  
+
   const mouse = new THREE.Vector2(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
   );
   raycaster.setFromCamera(mouse, camera);
   const intersects = raycaster.intersectObjects(cards, false);
-  
+
   if (intersects.length > 0) {
     document.body.style.cursor = isDragging ? 'grabbing' : 'pointer';
   } else {
@@ -201,7 +220,7 @@ const onPointerMove = (e) => {
 
   targetRotation.y += deltaMove.x * 0.005;
   targetRotation.x += deltaMove.y * 0.005;
-  targetRotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotation.x));
+  targetRotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, targetRotation.x));
 
   previousMousePosition = { x: e.clientX, y: e.clientY };
 };
@@ -232,7 +251,15 @@ const detailPlansContainer = document.getElementById('detail-plans-container');
 const backBtn = document.getElementById('back-btn');
 
 window.addEventListener('click', (e) => {
-  if (hasMoved || isDetailView || e.target.closest('#admin-overlay') || e.target.closest('.header')) return;
+  if (
+    hasMoved ||
+    isDetailView ||
+    e.target.closest('#search-overlay') ||
+    e.target.closest('.admin-overlay') ||
+    e.target.closest('.header') ||
+    e.target.closest('.social-footer') ||
+    e.target.closest('#detail-overlay')
+  ) return;
 
   const mouse = new THREE.Vector2(
     (e.clientX / window.innerWidth) * 2 - 1,
@@ -257,11 +284,11 @@ const openDetail = (card) => {
   detailSubtitle.innerText = data.subtitle;
   detailSpecs.innerText = `${data.houseType || 'N/A'} • Lote: ${data.lotSize || 'N/A'}`;
   detailDesc.innerText = data.desc;
-  
+
   detailFacadesContainer.innerHTML = '';
   const facadesArray = data.facades || [data.facade];
   facadesArray.forEach(path => {
-    if(!path) return;
+    if (!path) return;
     const img = document.createElement('img');
     img.src = path;
     img.style.width = '100%';
@@ -272,7 +299,7 @@ const openDetail = (card) => {
   detailPlansContainer.innerHTML = '';
   const plansArray = data.plans || [data.plan];
   plansArray.forEach(path => {
-    if(!path) return;
+    if (!path) return;
     const img = document.createElement('img');
     img.src = path;
     img.style.width = '100%';
@@ -336,7 +363,6 @@ if (backBtn) {
   });
 }
 
-// Handle browser back button
 window.addEventListener('popstate', () => {
   if (isDetailView) {
     closeDetail();
@@ -346,7 +372,6 @@ window.addEventListener('popstate', () => {
   }
 });
 
-// --- SEARCH LOGIC ---
 const openSearchBtn = document.getElementById('open-search-btn');
 const closeSearchBtn = document.getElementById('close-search-btn');
 const searchOverlay = document.getElementById('search-overlay');
@@ -359,7 +384,7 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
     history.pushState({ view: 'search' }, '', '#pesquisa');
     const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
     searchOptionsContainer.innerHTML = '';
-    
+
     const btnAll = document.createElement('button');
     btnAll.className = 'submit-btn';
     btnAll.style.background = currentFilter === null ? '#fff' : 'transparent';
@@ -403,15 +428,14 @@ if (closeSearchBtn && searchOverlay) {
   });
 }
 
-// --- SETTINGS (FOOTER) ---
 const linkInstagram = document.getElementById('link-instagram');
 const linkFacebook = document.getElementById('link-facebook');
 const linkYoutube = document.getElementById('link-youtube');
 const linkWhatsapp = document.getElementById('link-whatsapp');
+const siteLogos = document.querySelectorAll('.site-logo');
 
 const updateSocialLink = (element, url, enabled) => {
   if (!element) return;
-  // If explicitly disabled or url is empty, hide the icon completely
   if (enabled === false || !url || url.trim() === '' || url.trim() === '#') {
     element.style.display = 'none';
   } else {
@@ -422,13 +446,22 @@ const updateSocialLink = (element, url, enabled) => {
 
 const fetchSettings = async () => {
   try {
-    const res = await fetch('/api/settings');
+    const res = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
-    
+
     updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
     updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
     updateSocialLink(linkYoutube, data.youtube, data.youtubeEnabled);
     updateSocialLink(linkWhatsapp, data.whatsapp, data.whatsappEnabled);
+
+    siteLogos.forEach(img => {
+      if (data.hasLogo === false) {
+        img.style.display = 'none';
+      } else {
+        img.style.display = 'block';
+        img.src = `/images/logo.png?t=${data.logoUpdatedAt || Date.now()}`;
+      }
+    });
   } catch (err) {
     console.error('Failed to fetch settings', err);
   }
@@ -436,7 +469,6 @@ const fetchSettings = async () => {
 
 fetchSettings();
 
-// --- RENDER LOOP ---
 document.body.style.cursor = 'grab';
 
 const tick = () => {
@@ -446,7 +478,7 @@ const tick = () => {
 
     galleryGroup.rotation.x = currentRotation.x;
     galleryGroup.rotation.y = currentRotation.y;
-    
+
     if (!isDragging) {
       targetRotation.y -= 0.0005;
     }
@@ -465,7 +497,6 @@ const tick = () => {
 
 tick();
 
-// --- RESIZE ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -473,5 +504,4 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 });
 
-// --- PREVENT SAVING IMAGES ---
 document.addEventListener('contextmenu', event => event.preventDefault());
