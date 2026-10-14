@@ -34,6 +34,7 @@ const checkAuth = () => {
     adminDashboard.style.display = 'block';
     fetchSettings();
     fetchAdminProjects();
+    reloadLogoPreview();
   } else {
     loginScreen.style.display = 'block';
     adminDashboard.style.display = 'none';
@@ -91,6 +92,83 @@ adminForm.addEventListener('submit', async (e) => {
     submitAdminBtn.disabled = false;
   }
 });
+
+// --- LOGO LOGIC ---
+const logoForm = document.getElementById('logo-form');
+const formLogo = document.getElementById('form-logo');
+const submitLogoBtn = document.getElementById('submit-logo-btn');
+const deleteLogoBtn = document.getElementById('delete-logo-btn');
+const currentLogoPreview = document.getElementById('current-logo-preview');
+const noLogoText = document.getElementById('no-logo-text');
+
+function reloadLogoPreview() {
+  if (currentLogoPreview) {
+    currentLogoPreview.src = `/images/logo.png?t=${Date.now()}`;
+    currentLogoPreview.style.display = 'block';
+  }
+  if (noLogoText) {
+    noLogoText.style.display = 'none';
+  }
+}
+
+if (logoForm) {
+  logoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!formLogo.files.length) return;
+
+    const formData = new FormData();
+    formData.append('logo', formLogo.files[0]);
+
+    const originalBtnText = submitLogoBtn.innerText;
+    submitLogoBtn.innerText = 'Salvando...';
+    submitLogoBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/logo', {
+        method: 'POST',
+        headers: { 'Authorization': localStorage.getItem('adminToken') },
+        body: formData
+      });
+
+      if (!res.ok) throw new Error('Falha no upload da logo');
+      alert('Logo atualizada com sucesso!');
+      logoForm.reset();
+      reloadLogoPreview();
+    } catch (err) {
+      alert('Falha ao enviar logotipo (Autorização negada ou erro de arquivo).');
+    } finally {
+      submitLogoBtn.innerText = originalBtnText;
+      submitLogoBtn.disabled = false;
+    }
+  });
+}
+
+if (deleteLogoBtn) {
+  deleteLogoBtn.addEventListener('click', async () => {
+    if (!confirm('Tem certeza que deseja remover o logotipo atual?')) return;
+
+    const originalBtnText = deleteLogoBtn.innerText;
+    deleteLogoBtn.innerText = 'Removendo...';
+    deleteLogoBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/logo', {
+        method: 'DELETE',
+        headers: { 'Authorization': localStorage.getItem('adminToken') }
+      });
+
+      if (!res.ok) throw new Error('Falha ao remover a logo');
+      alert('Logotipo removido com sucesso!');
+      if (currentLogoPreview) currentLogoPreview.style.display = 'none';
+      if (noLogoText) noLogoText.style.display = 'block';
+    } catch (err) {
+      alert('Falha ao remover logotipo.');
+    } finally {
+      deleteLogoBtn.innerText = originalBtnText;
+      deleteLogoBtn.disabled = false;
+    }
+  });
+}
 
 // --- SETTINGS LOGIC ---
 const settingsForm = document.getElementById('settings-form');

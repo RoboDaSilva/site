@@ -1,224 +1,234 @@
 const express = require('express');
-const multer = require('multer');
 const cors = require('cors');
+const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 80;
 
-// Token estável: não expira nem invalida a sessão após novos deploys ou reinicializações
-const SESSION_TOKEN = process.env.ADMIN_SESSION_TOKEN || 'Bearer geminadas-adm-token-secret-2026';
-
-// Diretório para armazenamento das imagens (fachadas e plantas)
-const imagesDir = path.join(__dirname, 'images');
-if (!fs.existsSync(imagesDir)) {
-  fs.mkdirSync(imagesDir, { recursive: true });
-}
-
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Servir arquivos estáticos da raiz (index.html, admin.html, styles, scripts)
+// Ensure essential folders exist
+const IMAGES_DIR = path.join(__dirname, 'images');
+const DATA_FILE = path.join(__dirname, 'data.json');
+const PASSWORD_FILE = path.join(__dirname, 'password.json');
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(DATA_FILE, '[]', 'utf8');
+}
+if (!fs.existsSync(PASSWORD_FILE)) {
+  fs.writeFileSync(PASSWORD_FILE, JSON.stringify({ password: 'admin' }, null, 2), 'utf8');
+}
+if (!fs.existsSync(SETTINGS_FILE)) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
+    instagram: '',
+    facebook: '',
+    youtube: '',
+    whatsapp: ''
+  }, null, 2), 'utf8');
+}
+
+// Serve static images directly
+app.use('/images', express.static(IMAGES_DIR));
+
+// Serve root static files (index.html, admin.html, main.js, style.css, etc.)
 app.use(express.static(__dirname));
 
-// Servir as imagens carregadas via /images
-app.use('/images', express.static(imagesDir));
-
-// Rotas de páginas
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin.html'));
-});
-
-// Configuração do Multer para armazenamento de fotos
+// Multer storage configuration for uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, imagesDir);
+    cb(null, IMAGES_DIR);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    const ext = path.extname(file.originalname) || '.png';
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + ext);
   }
 });
+const upload = multer({ storage });
 
-const fileFilter = (req, file, cb) => {
-  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (allowedMimes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only JPG, PNG and WEBP are allowed.'), false);
+// In-memory active tokens (valid while server runs)
+const validTokens = new Set();
+
+function getAdminPassword() {
+  try {
+    const data = JSON.parse(fs.readFileSync(PASSWORD_FILE, 'utf8'));
+    return data.password || 'admin';
+  } catch (err) {
+    return 'admin';
   }
-};
+}
 
-const upload = multer({ storage: storage, fileFilter: fileFilter });
-
-// Middleware de Autenticação
-const requireAuth = (req, res, next) => {
-  const token = req.headers.authorization;
-  if (token === SESSION_TOKEN) {
-    next();
-  } else {
-    res.status(401).json({ error: 'Unauthorized' });
+// Authentication middleware
+function requireAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Token de autenticação ausente' });
   }
-};
-
-const getPassword = () => {
-  const pPath = path.join(__dirname, 'password.json');
-  if (fs.existsSync(pPath)) {
-    try {
-      return JSON.parse(fs.readFileSync(pPath, 'utf8')).password;
-    } catch (e) {
-      console.error('Erro ao ler password.json:', e);
-    }
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token || !validTokens.has(token)) {
+    return res.status(403).json({ error: 'Sessão inválida ou expirada' });
   }
-  return 'admin123'; // fallback
-};
+  next();
+}
 
-// --- ROTAS DA API ---
-
+// --- AUTH ROUTES ---
 app.post('/api/login', (req, res) => {
-  const { password } = req.body;
-  if (password === getPassword()) {
-    res.json({ token: SESSION_TOKEN.replace('Bearer ', '') });
-  } else {
-    res.status(401).json({ error: 'Invalid password' });
+  const { password } = req.body || {};
+  const currentPassword = getAdminPassword();
+  if (password === currentPassword) {
+    const token = crypto.randomBytes(32).toString('hex');
+    validTokens.add(token);
+    return res.json({ token });
   }
+  return res.status(401).json({ error: 'Senha incorreta' });
 });
 
 app.post('/api/password', requireAuth, (req, res) => {
-  const { newPassword } = req.body;
-  if (!newPassword || newPassword.trim() === '') {
-    return res.status(400).json({ error: 'Invalid password' });
+  const { newPassword } = req.body || {};
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length === 0) {
+    return res.status(400).json({ error: 'Nova senha inválida' });
   }
-  const pPath = path.join(__dirname, 'password.json');
-  fs.writeFileSync(pPath, JSON.stringify({ password: newPassword }, null, 2));
+  fs.writeFileSync(PASSWORD_FILE, JSON.stringify({ password: newPassword }, null, 2), 'utf8');
   res.json({ success: true });
 });
 
-app.get('/api/projects', (req, res) => {
-  const dataPath = path.join(__dirname, 'data.json');
-  if (!fs.existsSync(dataPath)) {
-    return res.json([]);
+// --- LOGO ROUTES ---
+// Upload / Replace logo.png
+app.post('/api/logo', requireAuth, upload.single('logo'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
+
+  const targetPath = path.join(IMAGES_DIR, 'logo.png');
+
   try {
-    const data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-    res.json(data);
-  } catch (e) {
-    console.error('Erro ao ler data.json:', e);
-    res.json([]);
-  }
-});
-
-app.post('/api/projects', requireAuth, upload.fields([{ name: 'facades', maxCount: 5 }, { name: 'plans', maxCount: 3 }]), (req, res) => {
-  const { title, subtitle, desc, lotSize, houseType } = req.body;
-  const facadeFiles = req.files['facades'] || [];
-  const planFiles = req.files['plans'] || [];
-
-  if (facadeFiles.length === 0 || planFiles.length === 0 || !title || !subtitle || !desc || !lotSize || !houseType) {
-    return res.status(400).json({ error: 'Missing required fields or files.' });
-  }
-
-  const dataPath = path.join(__dirname, 'data.json');
-  let data = [];
-  if (fs.existsSync(dataPath)) {
-    try {
-      data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-    } catch (e) {
-      data = [];
+    fs.copyFileSync(req.file.path, targetPath);
+    if (fs.existsSync(req.file.path) && req.file.path !== targetPath) {
+      fs.unlinkSync(req.file.path);
     }
+    return res.json({ success: true, url: '/images/logo.png' });
+  } catch (err) {
+    console.error('Erro ao salvar logo:', err);
+    return res.status(500).json({ error: 'Erro ao processar imagem' });
   }
-
-  const newProject = {
-    id: Date.now(),
-    title,
-    subtitle,
-    lotSize,
-    houseType,
-    desc,
-    facades: facadeFiles.map(file => `/images/${file.filename}`),
-    plans: planFiles.map(file => `/images/${file.filename}`)
-  };
-
-  data.push(newProject);
-  fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-
-  res.status(201).json(newProject);
 });
 
-app.get('/api/settings', (req, res) => {
-  const settingsPath = path.join(__dirname, 'settings.json');
-  if (!fs.existsSync(settingsPath)) {
-    return res.json({ instagram: '', facebook: '', youtube: '', whatsapp: '' });
-  }
+// Delete logo.png
+app.delete('/api/logo', requireAuth, (req, res) => {
+  const targetPath = path.join(IMAGES_DIR, 'logo.png');
   try {
-    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    res.json(data);
-  } catch (e) {
-    res.json({ instagram: '', facebook: '', youtube: '', whatsapp: '' });
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao deletar logo:', err);
+    return res.status(500).json({ error: 'Erro ao deletar imagem' });
+  }
+});
+
+// --- SETTINGS ROUTES ---
+app.get('/api/settings', (req, res) => {
+  try {
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    res.json(settings);
+  } catch (err) {
+    res.json({});
   }
 });
 
 app.post('/api/settings', requireAuth, (req, res) => {
-  const { instagram, facebook, youtube, whatsapp } = req.body;
-  const settingsPath = path.join(__dirname, 'settings.json');
-  
-  const newSettings = {
+  const { instagram, facebook, youtube, whatsapp } = req.body || {};
+  const settings = {
     instagram: instagram || '',
     facebook: facebook || '',
     youtube: youtube || '',
     whatsapp: whatsapp || ''
   };
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+  res.json({ success: true, settings });
+});
 
-  fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2));
-  res.json(newSettings);
+// --- PROJECTS ROUTES ---
+app.get('/api/projects', (req, res) => {
+  try {
+    const projects = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    res.json(projects);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+app.post('/api/projects', requireAuth, upload.fields([
+  { name: 'facades', maxCount: 10 },
+  { name: 'plans', maxCount: 10 }
+]), (req, res) => {
+  try {
+    const { title, subtitle, lotSize, houseType, desc } = req.body;
+    const facades = (req.files && req.files['facades']) ? req.files['facades'].map(f => `/images/${f.filename}`) : [];
+    const plans = (req.files && req.files['plans']) ? req.files['plans'].map(f => `/images/${f.filename}`) : [];
+
+    const newProject = {
+      id: Date.now(),
+      title: title || '',
+      subtitle: subtitle || '',
+      lotSize: lotSize || '',
+      houseType: houseType || '',
+      desc: desc || '',
+      facades,
+      plans
+    };
+
+    let projects = [];
+    if (fs.existsSync(DATA_FILE)) {
+      projects = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    }
+    projects.unshift(newProject);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(projects, null, 2), 'utf8');
+
+    res.json({ success: true, project: newProject });
+  } catch (err) {
+    console.error('Erro ao adicionar projeto:', err);
+    res.status(500).json({ error: 'Falha ao salvar projeto' });
+  }
 });
 
 app.delete('/api/projects/:id', requireAuth, (req, res) => {
-  const projectId = parseInt(req.params.id);
-  const dataPath = path.join(__dirname, 'data.json');
-  
-  if (!fs.existsSync(dataPath)) {
-    return res.status(404).json({ error: 'No projects found' });
-  }
-
-  let data = [];
   try {
-    data = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-  } catch (e) {
-    return res.status(500).json({ error: 'Error reading database' });
-  }
-
-  const projectIndex = data.findIndex(p => p.id === projectId);
-  if (projectIndex === -1) {
-    return res.status(404).json({ error: 'Project not found' });
-  }
-
-  const project = data[projectIndex];
-  
-  const filesToDelete = [...(project.facades || []), ...(project.plans || [])];
-  filesToDelete.forEach(fileUrl => {
-    const fileName = path.basename(fileUrl);
-    const filePath = path.join(imagesDir, fileName);
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (err) {
-        console.error('Erro ao deletar ficheiro:', filePath, err);
-      }
+    const id = Number(req.params.id);
+    let projects = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    
+    // Find project to clean up associated files
+    const projToDelete = projects.find(p => p.id === id);
+    if (projToDelete) {
+      const files = [...(projToDelete.facades || []), ...(projToDelete.plans || [])];
+      files.forEach(fPath => {
+        const basename = path.basename(fPath);
+        const fullP = path.join(IMAGES_DIR, basename);
+        if (fs.existsSync(fullP)) {
+          try { fs.unlinkSync(fullP); } catch(e) {}
+        }
+      });
     }
-  });
 
-  data.splice(projectIndex, 1);
-  fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+    projects = projects.filter(p => p.id !== id);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(projects, null, 2), 'utf8');
 
-  res.json({ success: true, message: 'Project deleted' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao excluir projeto:', err);
+    res.status(500).json({ error: 'Falha ao excluir projeto' });
+  }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Servidor rodando com sucesso na porta ${PORT}`);
 });
