@@ -1,87 +1,173 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
-  <head>    
-</script>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin - Level Construtora</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
     <style>
-      body { overflow: auto; padding: 2rem; }
-      .admin-container { max-width: 800px; margin: 0 auto; display: none; }
+      body { overflow: auto; padding: 2rem 1rem; background: #050505; color: #fff; font-family: 'Inter', sans-serif; }
+      .admin-container { max-width: 860px; margin: 0 auto; display: none; }
       .login-container { max-width: 400px; margin: 100px auto; text-align: center; }
-      .panel { background: rgba(20,20,20,0.8); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem; backdrop-filter: blur(10px); }
+      .panel { background: rgba(20,20,20,0.85); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem; backdrop-filter: blur(10px); }
       h1, h2 { color: white; margin-bottom: 1.5rem; }
+      .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+      .form-group { margin-bottom: 1.25rem; text-align: left; }
+      .form-group label { display: block; margin-bottom: 0.5rem; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa; font-weight: 600; }
+      .form-group input[type="text"],
+      .form-group input[type="url"],
+      .form-group input[type="number"],
+      .form-group input[type="password"],
+      .form-group select,
+      .form-group textarea {
+        width: 100%;
+        background-color: #080808;
+        border: 1px solid rgba(255,255,255,0.18);
+        color: white;
+        padding: 0.85rem 1rem;
+        border-radius: 0.5rem;
+        font-family: inherit;
+        font-size: 0.95rem;
+        box-sizing: border-box;
+      }
       .social-input-row { display: flex; align-items: center; gap: 1rem; }
-      .social-input-row input[type="url"] { flex: 1; }
+      .social-input-row input[type="url"], .social-input-row input[type="text"] { flex: 1; }
       .social-toggle-label { display: flex; align-items: center; gap: 0.5rem; color: #ccc; font-size: 0.9rem; cursor: pointer; white-space: nowrap; }
       .social-toggle-label input[type="checkbox"] { width: 1.2rem; height: 1.2rem; cursor: pointer; accent-color: #fff; }
+      .action-btn { border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: #fff; padding: 0.5rem 0.75rem; border-radius: 0.35rem; cursor: pointer; font-family: inherit; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; transition: 0.2s; }
+      .action-btn:hover { background: rgba(255,255,255,0.18); }
+      .action-btn.edit-btn { background: #2563eb; border-color: #2563eb; }
+      .action-btn.delete-btn { background: #dc2626; border-color: #dc2626; }
+      .edit-banner { display: none; background: rgba(37, 99, 235, 0.18); border: 1px solid #3b82f6; color: #93c5fd; padding: 0.85rem 1rem; border-radius: 0.5rem; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; }
     </style>
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KC9XCC4Q"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KC9XCC4Q"
+    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
+
     <div id="login-screen" class="login-container panel">
-      <h2>Admin Login</h2>
+      <h2>Acesso Restrito</h2>
       <form id="login-form">
         <div class="form-group">
-          <input type="password" id="login-password" placeholder="Password" required style="width: 100%; padding: 1rem; border-radius: 0.5rem; background: #050505; border: 1px solid rgba(255,255,255,0.2); color: white;" />
+          <input type="password" id="login-password" placeholder="Digite sua senha" required />
         </div>
-        <button type="submit" class="submit-btn">Entrar</button>
+        <button type="submit" class="submit-btn">Entrar no Painel</button>
       </form>
     </div>
 
     <div id="admin-dashboard" class="admin-container">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
         <h1 style="margin: 0;">Painel de Administração</h1>
-        <button id="logout-btn" class="back-btn">Sair</button>
+        <div style="display: flex; gap: 0.75rem;">
+          <a href="/" target="_blank" class="back-btn" style="text-decoration: none; display: inline-flex; align-items: center;">Ver Site</a>
+          <button id="logout-btn" class="back-btn">Sair</button>
+        </div>
       </div>
 
-      <div class="panel">
-        <h2>Adicionar Projeto</h2>
+      <div class="panel" id="form-panel">
+        <h2 id="form-panel-title">Cadastrar Novo Projeto</h2>
+
+        <div id="edit-mode-banner" class="edit-banner">
+          <span id="edit-mode-text">Editando projeto...</span>
+          <button type="button" id="cancel-edit-btn" class="action-btn">Cancelar Edição</button>
+        </div>
+
         <form id="admin-form">
-            <div class="form-group">
-              <label>Title</label>
-              <input type="text" id="form-title" required placeholder="e.g. Lumina Residence" />
+          <input type="hidden" id="form-project-id" value="" />
+
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Nome do Projeto *</label>
+              <input type="text" id="form-title" required placeholder="Ex: Lumina Residence" />
             </div>
-            <div class="form-group">
-              <label>Location & Year</label>
-              <input type="text" id="form-subtitle" required placeholder="e.g. Maringá, 2026" />
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Localização e Ano *</label>
+              <input type="text" id="form-subtitle" required placeholder="Ex: Maringá - PR, 2026" />
             </div>
-            <div class="form-group" style="display: flex; gap: 1rem;">
-              <div style="flex: 1;">
-                <label>Lot Size</label>
-                <input type="text" id="form-lot" required placeholder="e.g. 15x30m" />
-              </div>
-              <div style="flex: 1;">
-                <label>House Type</label>
-                <select id="form-type" required style="width: 100%; background-color: #050505; border: 1px solid rgba(255,255,255,0.2); color: white; padding: 1rem; border-radius: 0.5rem; font-family: inherit; font-size: 1rem;">
-                  <option value="Térrea">Térrea</option>
-                  <option value="Sobrado">Sobrado</option>
-                </select>
-              </div>
+          </div>
+
+          <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Medidas do Lote *</label>
+              <input type="text" id="form-lot" required placeholder="Ex: 15x30m" />
             </div>
-            <div class="form-group">
-              <label>Description</label>
-              <textarea id="form-desc" rows="4" required placeholder="Project description..."></textarea>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Tipo de Imóvel *</label>
+              <select id="form-type" required>
+                <option value="Térrea">Casa Térrea</option>
+                <option value="Sobrado">Sobrado</option>
+                <option value="Geminada">Casa Geminada</option>
+                <option value="Condomínio">Alto Padrão em Condomínio</option>
+                <option value="Comercial">Comercial / Corporativo</option>
+              </select>
             </div>
-            <div class="form-group">
-              <label>Facade Images (Up to 5)</label>
+          </div>
+
+          <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Área Construída (m²)</label>
+              <input type="text" id="form-area" placeholder="Ex: 245 m²" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Quartos / Suítes</label>
+              <input type="text" id="form-bedrooms" placeholder="Ex: 3 Suítes" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Vagas de Garagem</label>
+              <input type="text" id="form-garage" placeholder="Ex: 2 Vagas Cobertas" />
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Status do Projeto</label>
+              <select id="form-status">
+                <option value="Projeto Exclusivo">Projeto Exclusivo</option>
+                <option value="Na Planta">Na Planta</option>
+                <option value="Em Obras">Em Obras</option>
+                <option value="Concluído">Obra Concluída</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-top: 1rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Link de Vídeo (YouTube / Tour 3D) - Opcional</label>
+              <input type="url" id="form-video" placeholder="Ex: https://www.youtube.com/watch?v=..." />
+            </div>
+            <div class="form-group" style="margin-bottom: 0; display: flex; align-items: flex-end; padding-bottom: 0.4rem;">
+              <label class="social-toggle-label" style="font-size: 0.92rem; color: #fff; text-transform: none;">
+                <input type="checkbox" id="form-visible" checked /> Mostrar projeto visível na Galeria 3D
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 1.25rem;">
+            <label>Descrição Detalhada do Projeto *</label>
+            <textarea id="form-desc" rows="4" required placeholder="Descreva os diferenciais arquitetônicos, acabamentos..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Imagens da Fachada / 3D (Até 5) *</label>
               <input type="file" id="form-facade" accept="image/*" multiple required />
             </div>
-            <div class="form-group">
-              <label>Floor Plan Images (Up to 3)</label>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Imagens da Planta Humanizada (Até 3) *</label>
               <input type="file" id="form-plan" accept="image/*" multiple required />
             </div>
-            <button type="submit" class="submit-btn" id="submit-admin-btn">Upload Project</button>
+          </div>
+
+          <button type="submit" class="submit-btn" id="submit-admin-btn" style="margin-top: 1.5rem;">Cadastrar Projeto</button>
         </form>
       </div>
 
       <div class="panel">
-        <h2>Projetos Cadastrados</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h2 style="margin: 0;">Projetos Cadastrados</h2>
+          <span id="projects-count-badge" style="color: #aaa; font-size: 0.85rem;">0 projetos</span>
+        </div>
         <div id="projects-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
           <p style="color: #888;">Carregando projetos...</p>
         </div>
@@ -108,7 +194,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       </div>
 
       <div class="panel">
-        <h2>Configurar Redes Sociais</h2>
+        <h2>Configurar Redes Sociais e Contato</h2>
         <form id="settings-form">
             <div class="form-group">
               <label>Instagram</label>
@@ -138,20 +224,28 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
               </div>
             </div>
             <div class="form-group">
-              <label>WhatsApp</label>
+              <label>Número ou Link do WhatsApp</label>
               <div class="social-input-row">
-                <input type="url" id="form-whatsapp" placeholder="https://wa.me/..." />
+                <input type="text" id="form-whatsapp" placeholder="Ex: 5544998641000 ou https://wa.me/..." />
                 <label class="social-toggle-label">
                   <input type="checkbox" id="form-whatsapp-enabled" checked /> Ativo
                 </label>
               </div>
             </div>
-            <button type="submit" class="submit-btn" id="submit-settings-btn">Salvar Redes Sociais</button>
+            <div class="form-group">
+              <label>Mensagem Padrão do WhatsApp (Página Inicial)</label>
+              <input type="text" id="form-whatsapp-msg" placeholder="Ex: Olá! Encontrei a construtora no Google, gostaria de mais informações." />
+            </div>
+            <div class="form-group">
+              <label>Endereço Exibido no Rodapé</label>
+              <input type="text" id="form-address" placeholder="Avenida Centenário 520, Maringá - PR" />
+            </div>
+            <button type="submit" class="submit-btn" id="submit-settings-btn">Salvar Configurações</button>
         </form>
       </div>
 
       <div class="panel">
-        <h2>Alterar Senha</h2>
+        <h2>Alterar Senha do Painel</h2>
         <form id="password-form">
             <div class="form-group">
               <label>Nova Senha</label>
