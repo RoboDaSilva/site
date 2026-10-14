@@ -12,8 +12,6 @@ const formProjectId = document.getElementById('form-project-id');
 
 const formTitle = document.getElementById('form-title');
 const formSubtitle = document.getElementById('form-subtitle');
-const formLotFront = document.getElementById('form-lot-front');
-const formLotDepth = document.getElementById('form-lot-depth');
 const formLot = document.getElementById('form-lot');
 const formType = document.getElementById('form-type');
 const formArea = document.getElementById('form-area');
@@ -48,6 +46,7 @@ const formYoutube = document.getElementById('form-youtube');
 const formYoutubeEnabled = document.getElementById('form-youtube-enabled');
 const formWhatsapp = document.getElementById('form-whatsapp');
 const formWhatsappEnabled = document.getElementById('form-whatsapp-enabled');
+const formWhatsappMsg = document.getElementById('form-whatsapp-msg');
 const formAddress = document.getElementById('form-address');
 const submitSettingsBtn = document.getElementById('submit-settings-btn');
 
@@ -59,20 +58,6 @@ let cachedProjects = [];
 let cachedSettings = {};
 let editingProject = null;
 
-// Auxiliar de padronização de medidas de lote (Ex: 15 + 30 => 15x30m)
-function updateLotFromDimensions() {
-  if (!formLotFront || !formLotDepth || !formLot) return;
-  const f = formLotFront.value.trim();
-  const d = formLotDepth.value.trim();
-  if (f && d) {
-    formLot.value = `${f}x${d}m`;
-  }
-}
-if (formLotFront && formLotDepth) {
-  formLotFront.addEventListener('input', updateLotFromDimensions);
-  formLotDepth.addEventListener('input', updateLotFromDimensions);
-}
-
 function normalizeLotSize(raw) {
   if (!raw) return '';
   const cleaned = raw.trim();
@@ -83,7 +68,6 @@ function normalizeLotSize(raw) {
   return cleaned;
 }
 
-// Embute e extrai metadados extras na descrição de forma invisível caso o backend ignore campos novos
 const META_SEPARATOR = '\n<!--LEVEL_META:';
 const META_END = '-->';
 
@@ -101,9 +85,8 @@ export function unpackProjectMeta(project) {
   if (sepIdx !== -1) {
     const endIdx = rawDesc.indexOf(META_END, sepIdx);
     if (endIdx !== -1) {
-      const jsonStr = rawDesc.slice(sepIdx + META_SEPARATOR.length, endIdx);
       try {
-        embeddedMeta = JSON.parse(jsonStr);
+        embeddedMeta = JSON.parse(rawDesc.slice(sepIdx + META_SEPARATOR.length, endIdx));
       } catch (e) {}
     }
     rawDesc = rawDesc.slice(0, sepIdx).trim();
@@ -153,25 +136,6 @@ function reloadLogoPreview(hasLogo = true) {
   currentLogoPreview.src = `/images/logo.png?t=${Date.now()}`;
 }
 
-async function saveExtraSettingsMeta(updatedMetaMap) {
-  try {
-    cachedSettings.projectMeta = updatedMetaMap;
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': localStorage.getItem('adminToken')
-      },
-      body: JSON.stringify({
-        ...cachedSettings,
-        projectMeta: updatedMetaMap
-      })
-    });
-  } catch (e) {
-    console.warn('Não foi possível salvar metadados secundários em settings:', e);
-  }
-}
-
 async function fetchSettings() {
   try {
     const res = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' });
@@ -190,6 +154,7 @@ async function fetchSettings() {
 
     if (formWhatsapp) formWhatsapp.value = data.whatsapp || '';
     if (formWhatsappEnabled) formWhatsappEnabled.checked = data.whatsappEnabled !== false;
+    if (formWhatsappMsg) formWhatsappMsg.value = data.whatsappMsg || 'Olá! Encontrei a construtora no Google, gostaria de mais informações.';
 
     if (formAddress) formAddress.value = data.address || 'Avenida Centenário 520, Maringá - PR';
 
@@ -210,18 +175,6 @@ function startEditProject(project) {
   if (formTitle) formTitle.value = project.title || '';
   if (formSubtitle) formSubtitle.value = project.subtitle || '';
   if (formLot) formLot.value = project.lotSize || '';
-
-  const lotMatch = (project.lotSize || '').match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)m?$/i);
-  if (formLotFront && formLotDepth) {
-    if (lotMatch) {
-      formLotFront.value = lotMatch[1];
-      formLotDepth.value = lotMatch[2];
-    } else {
-      formLotFront.value = '';
-      formLotDepth.value = '';
-    }
-  }
-
   if (formType) formType.value = project.houseType || 'Térrea';
   if (formArea) formArea.value = project.area || '';
   if (formBedrooms) formBedrooms.value = project.bedrooms || '';
@@ -233,8 +186,6 @@ function startEditProject(project) {
 
   if (formFacade) formFacade.required = false;
   if (formPlan) formPlan.required = false;
-  if (facadeEditHint) facadeEditHint.style.display = 'block';
-  if (planEditHint) planEditHint.style.display = 'block';
 
   const panelEl = document.getElementById('form-panel') || adminForm;
   if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth' });
@@ -250,8 +201,6 @@ function cancelEditProject() {
   if (submitAdminBtn) submitAdminBtn.innerText = 'Cadastrar Projeto';
   if (formFacade) formFacade.required = true;
   if (formPlan) formPlan.required = true;
-  if (facadeEditHint) facadeEditHint.style.display = 'none';
-  if (planEditHint) planEditHint.style.display = 'none';
 }
 
 if (cancelEditBtn) {
@@ -284,7 +233,7 @@ async function fetchAdminProjects() {
       projectsCountBadge.innerText = `${cachedProjects.length} ${cachedProjects.length === 1 ? 'projeto' : 'projetos'}`;
     }
 
-    cachedProjects.forEach((project, idx) => {
+    cachedProjects.forEach((project) => {
       const div = document.createElement('div');
       div.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: rgba(0,0,0,0.45); padding: 1rem; border-radius: 0.65rem; border: 1px solid rgba(255,255,255,0.1); flex-wrap: wrap;';
 
@@ -302,11 +251,6 @@ async function fetchAdminProjects() {
             <p style="margin: 0.25rem 0; font-size: 0.85rem; color: #999;">
               Lote: <strong>${project.lotSize || 'N/A'}</strong> • ${project.houseType || 'N/A'} • ${project.subtitle || ''}
             </p>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem;">
-              ${project.area ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">📐 ${project.area}</span>` : ''}
-              ${project.bedrooms ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">🛏️ ${project.bedrooms}</span>` : ''}
-              ${project.garage ? `<span style="background:rgba(255,255,255,0.1);padding:0.15rem 0.5rem;border-radius:0.3rem;font-size:0.75rem;color:#ddd;">🚗 ${project.garage}</span>` : ''}
-            </div>
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
@@ -437,7 +381,6 @@ if (adminForm) {
         order: editingProject && typeof editingProject.order === 'number' ? editingProject.order : cachedProjects.length
       };
 
-      // Embute os metadados extras na descrição de forma invisível e mantém apenas os 5 campos que o server.cjs espera
       const packedDesc = packDescriptionWithMeta(cleanDesc, extraMeta);
 
       const formData = new FormData();
@@ -491,7 +434,6 @@ if (adminForm) {
         savedProject = await res.json();
       } catch (e) {}
 
-      // Se estávamos editando um projeto existente, remove a versão anterior após criar a nova com sucesso
       if (editingProject && editingProject.id) {
         await fetch(`/api/projects/${editingProject.id}`, {
           method: 'DELETE',
@@ -499,18 +441,12 @@ if (adminForm) {
         });
       }
 
-      if (savedProject && savedProject.id) {
-        const metaMap = { ...(cachedSettings.projectMeta || {}) };
-        metaMap[savedProject.id] = extraMeta;
-        await saveExtraSettingsMeta(metaMap);
-      }
-
       alert(editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto cadastrado com sucesso!');
       cancelEditProject();
       await fetchAdminProjects();
     } catch (err) {
-      console.error('Erro detalhado ao salvar projeto:', err);
-      alert(`Falha ao salvar o projeto: ${err.message || 'Verifique o tamanho das imagens (máx 5 fachadas e 3 plantas).'}`);
+      console.error('Erro ao salvar projeto:', err);
+      alert(`Falha ao salvar o projeto: ${err.message || 'Verifique o tamanho das imagens.'}`);
     } finally {
       if (submitAdminBtn) {
         submitAdminBtn.innerText = editingProject ? 'Salvar Alterações do Projeto' : originalBtnText;
@@ -593,6 +529,7 @@ if (settingsForm) {
       youtubeEnabled: formYoutubeEnabled ? Boolean(formYoutubeEnabled.checked) : true,
       whatsapp: formWhatsapp ? formWhatsapp.value.trim() : '',
       whatsappEnabled: formWhatsappEnabled ? Boolean(formWhatsappEnabled.checked) : true,
+      whatsappMsg: formWhatsappMsg ? formWhatsappMsg.value.trim() : '',
       address: formAddress ? formAddress.value.trim() : 'Avenida Centenário 520, Maringá - PR'
     };
 
