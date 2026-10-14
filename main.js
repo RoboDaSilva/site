@@ -1,4 +1,4 @@
-﻿import * as THREE from 'three';
+import * as THREE from 'three';
 import gsap from 'gsap';
 
 const container = document.getElementById('canvas-container');
@@ -170,72 +170,6 @@ fetchProjects().then(data => {
   buildGallery(data);
 });
 
-let isDragging = false;
-let previousMousePosition = { x: 0, y: 0 };
-let targetRotation = { x: 0, y: 0 };
-let currentRotation = { x: 0, y: 0 };
-let hasMoved = false;
-let targetFov = 60;
-
-window.addEventListener('wheel', (e) => {
-  if (isDetailView) return;
-  targetFov += e.deltaY * 0.05;
-  targetFov = Math.max(30, Math.min(100, targetFov));
-}, { passive: true });
-
-const onPointerDown = (e) => {
-  if (isDetailView) return;
-  isDragging = true;
-  hasMoved = false;
-  previousMousePosition = { x: e.clientX, y: e.clientY };
-  document.body.style.cursor = 'grabbing';
-};
-
-const onPointerMove = (e) => {
-  if (isDetailView) return;
-
-  const mouse = new THREE.Vector2(
-    (e.clientX / window.innerWidth) * 2 - 1,
-    -(e.clientY / window.innerHeight) * 2 + 1
-  );
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(cards, false);
-
-  if (intersects.length > 0) {
-    document.body.style.cursor = isDragging ? 'grabbing' : 'pointer';
-  } else {
-    document.body.style.cursor = isDragging ? 'grabbing' : 'grab';
-  }
-
-  if (!isDragging) return;
-
-  const deltaMove = {
-    x: e.clientX - previousMousePosition.x,
-    y: e.clientY - previousMousePosition.y
-  };
-
-  if (Math.abs(deltaMove.x) > 2 || Math.abs(deltaMove.y) > 2) {
-    hasMoved = true;
-  }
-
-  targetRotation.y += deltaMove.x * 0.005;
-  targetRotation.x += deltaMove.y * 0.005;
-  targetRotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, targetRotation.x));
-
-  previousMousePosition = { x: e.clientX, y: e.clientY };
-};
-
-const onPointerUp = () => {
-  if (isDetailView) return;
-  isDragging = false;
-  document.body.style.cursor = 'grab';
-};
-
-window.addEventListener('pointerdown', onPointerDown);
-window.addEventListener('pointermove', onPointerMove);
-window.addEventListener('pointerup', onPointerUp);
-window.addEventListener('pointerleave', onPointerUp);
-
 const raycaster = new THREE.Raycaster();
 let isDetailView = false;
 let isRendering = true;
@@ -250,40 +184,139 @@ const detailFacadesContainer = document.getElementById('detail-facades-container
 const detailPlansContainer = document.getElementById('detail-plans-container');
 const backBtn = document.getElementById('back-btn');
 
-window.addEventListener('click', (e) => {
-  if (
-    hasMoved ||
-    isDetailView ||
-    e.target.closest('#search-overlay') ||
-    e.target.closest('.admin-overlay') ||
-    e.target.closest('.header') ||
-    e.target.closest('.social-footer') ||
-    e.target.closest('#detail-overlay')
-  ) return;
+let isDragging = false;
+let pointerDownPos = { x: 0, y: 0 };
+let previousMousePosition = { x: 0, y: 0 };
+let targetRotation = { x: 0, y: 0 };
+let currentRotation = { x: 0, y: 0 };
+let hasMoved = false;
+let targetFov = 60;
 
-  const mouse = new THREE.Vector2(
+window.addEventListener('wheel', (e) => {
+  if (isDetailView) return;
+  targetFov += e.deltaY * 0.05;
+  targetFov = Math.max(30, Math.min(100, targetFov));
+}, { passive: true });
+
+const isUIElement = (target) => {
+  if (!target || typeof target.closest !== 'function') return false;
+  return Boolean(
+    target.closest('#search-overlay') ||
+    target.closest('.admin-overlay') ||
+    target.closest('.header') ||
+    target.closest('.social-footer') ||
+    target.closest('#detail-overlay')
+  );
+};
+
+const getCardFromIntersection = (intersectObj) => {
+  let obj = intersectObj;
+  while (obj && !cards.includes(obj)) {
+    obj = obj.parent;
+  }
+  return obj;
+};
+
+const onPointerDown = (e) => {
+  if (isDetailView || isUIElement(e.target)) return;
+  isDragging = true;
+  hasMoved = false;
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+  previousMousePosition = { x: e.clientX, y: e.clientY };
+  document.body.style.cursor = 'grabbing';
+};
+
+const onPointerMove = (e) => {
+  if (isDetailView) return;
+
+  if (e.pointerType === 'mouse') {
+    const mouse = new THREE.Vector2(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(cards, true);
+
+    if (intersects.length > 0) {
+      document.body.style.cursor = isDragging ? 'grabbing' : 'pointer';
+    } else {
+      document.body.style.cursor = isDragging ? 'grabbing' : 'grab';
+    }
+  }
+
+  if (!isDragging) return;
+
+  const totalDeltaX = e.clientX - pointerDownPos.x;
+  const totalDeltaY = e.clientY - pointerDownPos.y;
+
+  // Tolerância maior para telas sensíveis ao toque (iPhone/Android)
+  const moveThreshold = e.pointerType === 'touch' ? 12 : 5;
+  if (Math.hypot(totalDeltaX, totalDeltaY) > moveThreshold) {
+    hasMoved = true;
+  }
+
+  const deltaMove = {
+    x: e.clientX - previousMousePosition.x,
+    y: e.clientY - previousMousePosition.y
+  };
+
+  targetRotation.y += deltaMove.x * 0.005;
+  targetRotation.x += deltaMove.y * 0.005;
+  targetRotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, targetRotation.x));
+
+  previousMousePosition = { x: e.clientX, y: e.clientY };
+};
+
+const onPointerUp = (e) => {
+  if (isDetailView) return;
+  const wasDragging = isDragging;
+  isDragging = false;
+  document.body.style.cursor = 'grab';
+
+  if (!wasDragging || hasMoved || isUIElement(e.target)) return;
+
+  // Garante que matrizes da câmera e dos cards estejam atualizadas no momento do toque
+  camera.updateMatrixWorld();
+  galleryGroup.updateMatrixWorld(true);
+
+  const pointer = new THREE.Vector2(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
   );
 
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(cards, false);
+  raycaster.setFromCamera(pointer, camera);
+  const intersects = raycaster.intersectObjects(cards, true);
 
   if (intersects.length > 0) {
-    openDetail(intersects[0].object);
+    const selectedCard = getCardFromIntersection(intersects[0].object);
+    if (selectedCard) {
+      openDetail(selectedCard);
+    }
   }
-});
+};
+
+const onPointerCancel = () => {
+  isDragging = false;
+  document.body.style.cursor = 'grab';
+};
+
+window.addEventListener('pointerdown', onPointerDown);
+window.addEventListener('pointermove', onPointerMove);
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('pointercancel', onPointerCancel);
+window.addEventListener('pointerleave', onPointerCancel);
 
 const openDetail = (card) => {
+  if (isDetailView) return;
   isDetailView = true;
   history.pushState({ view: 'detail' }, '', '#projeto');
   activeCard = card;
   const data = card.userData;
 
-  detailTitle.innerText = data.title;
-  detailSubtitle.innerText = data.subtitle;
+  detailTitle.innerText = data.title || '';
+  detailSubtitle.innerText = data.subtitle || '';
   detailSpecs.innerText = `${data.houseType || 'N/A'} • Lote: ${data.lotSize || 'N/A'}`;
-  detailDesc.innerText = data.desc;
+  detailDesc.innerText = data.desc || '';
 
   detailFacadesContainer.innerHTML = '';
   const facadesArray = data.facades || [data.facade];
@@ -319,10 +352,16 @@ const openDetail = (card) => {
     ease: 'power3.inOut'
   });
 
+  // Garante visibilidade e interatividade no iOS Safari
+  detailOverlay.style.display = 'block';
+  detailOverlay.style.pointerEvents = 'auto';
+  detailOverlay.classList.add('active-detail');
+  detailOverlay.scrollTop = 0;
+
   gsap.to(detailOverlay, {
     autoAlpha: 1,
     duration: 1,
-    delay: 0.8,
+    delay: 0.6,
     ease: 'power2.out',
     onComplete: () => {
       isRendering = false;
@@ -333,11 +372,15 @@ const openDetail = (card) => {
 const closeDetail = () => {
   if (!isDetailView) return;
   isRendering = true;
+  detailOverlay.style.pointerEvents = 'none';
+  detailOverlay.classList.remove('active-detail');
+
   gsap.to(detailOverlay, {
     autoAlpha: 0,
     duration: 0.5,
     ease: 'power2.in',
     onComplete: () => {
+      detailOverlay.style.display = 'none';
       gsap.to(camera.position, {
         x: 0,
         y: 0,
