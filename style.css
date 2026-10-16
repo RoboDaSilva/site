@@ -484,6 +484,7 @@ canvas {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.55rem;
   width: 100%;
   padding: 0.65rem 1rem;
   background: var(--accent-whatsapp);
@@ -494,6 +495,14 @@ canvas {
   text-decoration: none;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.custom-lot-banner a svg {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
 }
 
 /* ==========================================================================
@@ -888,8 +897,8 @@ canvas {
 }
 
 .specs-badges-container {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
   margin-bottom: 1.5rem;
 }
@@ -898,13 +907,19 @@ canvas {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
-  padding: 0.45rem 0.9rem;
-  border-radius: 2rem;
-  font-size: clamp(0.8rem, 1.4vw, 0.92rem);
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: clamp(0.78rem, 1.4vw, 0.92rem);
   font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: center;
+  text-align: center;
+  gap: 0.4rem;
+}
+
+.specs-badges-container .spec-badge:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .detail-cta-group {
@@ -1421,6 +1436,16 @@ canvas {
 @media (min-width: 768px) {
   .detail-logo-hide-sm {
     display: block;
+  }
+
+  .specs-badges-container {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .spec-badge {
+    border-radius: 2rem;
+    padding: 0.45rem 0.9rem;
   }
 
   .project-whatsapp-cta,

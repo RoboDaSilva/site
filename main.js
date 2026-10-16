@@ -684,14 +684,34 @@ const lightboxStage = document.getElementById('lightbox-stage');
 
 let lightboxItems = [];
 let lightboxIndex = 0;
+let lbScale = 1;
 let isLightboxZoomed = false;
 let lbPan = { x: 0, y: 0 };
 let lbDragStart = null;
+const lbPointers = new Map();
+let lbInitialPinchDist = null;
+let lbInitialPinchScale = 1;
+let lbLastTapTime = 0;
 
-const applyLightboxTransform = () => {
+const getLbPinchDistance = () => {
+  const pts = Array.from(lbPointers.values());
+  if (pts.length < 2) return 0;
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+};
+
+const applyLightboxTransform = (animate = false) => {
   if (!lightboxImg) return;
-  const scale = isLightboxZoomed ? 2.25 : 1;
-  lightboxImg.style.transform = `translate(${lbPan.x}px, ${lbPan.y}px) scale(${scale})`;
+  isLightboxZoomed = lbScale > 1.05;
+  if (!isLightboxZoomed) {
+    lbPan = { x: 0, y: 0 };
+  } else {
+    const maxPanX = Math.max(240, (window.innerWidth * (lbScale - 1)) * 0.55);
+    const maxPanY = Math.max(240, (window.innerHeight * (lbScale - 1)) * 0.55);
+    lbPan.x = THREE.MathUtils.clamp(lbPan.x, -maxPanX, maxPanX);
+    lbPan.y = THREE.MathUtils.clamp(lbPan.y, -maxPanY, maxPanY);
+  }
+  lightboxImg.style.transition = animate ? 'transform 0.2s ease-out' : 'none';
+  lightboxImg.style.transform = `translate(${lbPan.x}px, ${lbPan.y}px) scale(${lbScale})`;
   lightboxImg.classList.toggle('zoomed', isLightboxZoomed);
   if (lightboxZoomBtn) {
     lightboxZoomBtn.innerText = isLightboxZoomed ? '🔍 Zoom -' : '🔍 Zoom +';
@@ -699,9 +719,23 @@ const applyLightboxTransform = () => {
 };
 
 const resetLightboxZoom = () => {
+  lbScale = 1;
   isLightboxZoomed = false;
   lbPan = { x: 0, y: 0 };
-  applyLightboxTransform();
+  lbPointers.clear();
+  lbInitialPinchDist = null;
+  lbDragStart = null;
+  applyLightboxTransform(true);
+};
+
+const toggleLightboxStepZoom = () => {
+  if (lbScale > 1.05) {
+    lbScale = 1;
+    lbPan = { x: 0, y: 0 };
+  } else {
+    lbScale = 2.25;
+  }
+  applyLightboxTransform(true);
 };
 
 const renderLightboxSlide = () => {
@@ -734,11 +768,7 @@ const closeLightbox = () => {
 
 if (lightboxCloseBtn) lightboxCloseBtn.addEventListener('click', closeLightbox);
 if (lightboxZoomBtn) {
-  lightboxZoomBtn.addEventListener('click', () => {
-    isLightboxZoomed = !isLightboxZoomed;
-    if (!isLightboxZoomed) lbPan = { x: 0, y: 0 };
-    applyLightboxTransform();
-  });
+  lightboxZoomBtn.addEventListener('click', toggleLightboxStepZoom);
 }
 if (lightboxPrevBtn) {
   lightboxPrevBtn.addEventListener('click', () => {
@@ -755,31 +785,95 @@ if (lightboxNextBtn) {
   });
 }
 if (lightboxStage && lightboxImg) {
-  lightboxImg.addEventListener('dblclick', () => {
-    isLightboxZoomed = !isLightboxZoomed;
-    if (!isLightboxZoomed) lbPan = { x: 0, y: 0 };
-    applyLightboxTransform();
+  lightboxImg.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    toggleLightboxStepZoom();
   });
 
+  lightboxStage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.0025;
+    lbScale = THREE.MathUtils.clamp(lbScale + delta, 1, 4);
+    applyLightboxTransform(false);
+  }, { passive: false });
+
   lightboxStage.addEventListener('pointerdown', (e) => {
-    if (e.target === lightboxStage && !isLightboxZoomed) {
-      closeLightbox();
+    lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (lbPointers.size === 2) {
+      lbDragStart = null;
+      lbInitialPinchDist = getLbPinchDistance();
+      lbInitialPinchScale = lbScale;
       return;
     }
-    if (!isLightboxZoomed) return;
-    lbDragStart = { x: e.clientX - lbPan.x, y: e.clientY - lbPan.y };
+
+    if (lbPointers.size === 1) {
+      // Detecta duplo toque no mobile para ampliar/reduzir rapidamente
+      if (e.pointerType === 'touch' && e.target === lightboxImg) {
+        const now = performance.now();
+        if (now - lbLastTapTime < 280) {
+          toggleLightboxStepZoom();
+          lbLastTapTime = 0;
+          return;
+        }
+        lbLastTapTime = now;
+      }
+
+      if (e.target === lightboxStage && !isLightboxZoomed) {
+        closeLightbox();
+        return;
+      }
+
+      if (lbScale > 1.02) {
+        lbDragStart = { x: e.clientX - lbPan.x, y: e.clientY - lbPan.y };
+      }
+    }
   });
 
   lightboxStage.addEventListener('pointermove', (e) => {
-    if (!isLightboxZoomed || !lbDragStart) return;
-    lbPan.x = THREE.MathUtils.clamp(e.clientX - lbDragStart.x, -480, 480);
-    lbPan.y = THREE.MathUtils.clamp(e.clientY - lbDragStart.y, -380, 380);
-    applyLightboxTransform();
+    if (lbPointers.has(e.pointerId)) {
+      lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (lbPointers.size === 2 && lbInitialPinchDist > 0) {
+      const dist = getLbPinchDistance();
+      const ratio = dist / Math.max(15, lbInitialPinchDist);
+      lbScale = THREE.MathUtils.clamp(lbInitialPinchScale * ratio, 1, 4);
+      applyLightboxTransform(false);
+      return;
+    }
+
+    if (lbPointers.size === 1 && lbScale > 1.02 && lbDragStart) {
+      lbPan.x = e.clientX - lbDragStart.x;
+      lbPan.y = e.clientY - lbDragStart.y;
+      applyLightboxTransform(false);
+    }
   });
 
-  const endLbDrag = () => { lbDragStart = null; };
-  lightboxStage.addEventListener('pointerup', endLbDrag);
-  lightboxStage.addEventListener('pointercancel', endLbDrag);
+  const endLbPointer = (e) => {
+    if (e && e.pointerId !== undefined) {
+      lbPointers.delete(e.pointerId);
+    } else {
+      lbPointers.clear();
+    }
+    if (lbPointers.size < 2) {
+      lbInitialPinchDist = null;
+    }
+    if (lbPointers.size === 1 && lbScale > 1.02) {
+      const remaining = Array.from(lbPointers.values())[0];
+      lbDragStart = { x: remaining.x - lbPan.x, y: remaining.y - lbPan.y };
+    } else if (lbPointers.size === 0) {
+      lbDragStart = null;
+      if (lbScale < 1.05) {
+        lbScale = 1;
+        applyLightboxTransform(true);
+      }
+    }
+  };
+
+  lightboxStage.addEventListener('pointerup', endLbPointer);
+  lightboxStage.addEventListener('pointercancel', endLbPointer);
+  lightboxStage.addEventListener('pointerleave', endLbPointer);
 }
 
 /* ==========================================================================
@@ -946,8 +1040,8 @@ const populateDetailContent = (card) => {
     data.houseType ? `🏠 ${data.houseType}` : null,
     data.lotSize ? `📏 Lote: ${data.lotSize}` : null,
     data.area ? `📐 Área: ${data.area}` : null,
-    data.bedrooms ? `🛏️ ${data.bedrooms}` : null,
-    data.garage ? `🚗 ${data.garage}` : null,
+    data.bedrooms ? `🛏️ Quartos: ${data.bedrooms}` : null,
+    data.garage ? `🚗 Vagas: ${data.garage}` : null,
     data.status ? `✨ ${data.status}` : null
   ].filter(Boolean);
 
@@ -1038,7 +1132,7 @@ const populateDetailContent = (card) => {
     wrapper.className = 'zoomable-img-wrapper';
     wrapper.innerHTML = `
       <img src="${path}" alt="${data.title || 'Projeto'} - Planta ${idx + 1}" loading="lazy" decoding="async" />
-      <span class="zoom-badge-hint">🔍 Dar Zoom na Planta</span>
+      <span class="zoom-badge-hint">🔍 Ampliar Planta</span>
     `;
     wrapper.addEventListener('click', () => openLightbox(allLightboxImages, facadesArray.length + idx));
     plansFragment.appendChild(wrapper);
@@ -1347,8 +1441,15 @@ const renderSearchModalOptions = () => {
   const customLotMsg = 'Olá! Estou no site da Level Construtora e meu terreno possui uma medida específica. Gostaria de conversar sobre um projeto personalizado.';
   customBanner.innerHTML = `
     <strong>📏 Seu terreno tem outra medida?</strong>
-    <p>Desenvolvemos projetos 100% personalizados para lotes regulares, irregulares ou em esquina em Maringá e região.</p>
-    <a href="${buildWhatsappUrl(customLotMsg)}" target="_blank" rel="noopener noreferrer">Solicitar Projeto Sob Medida</a>
+    <p>Desenvolvemos projetos 100% personalizados para lotes regulares, irregulares ou em esquina.</p>
+    <a href="${buildWhatsappUrl(customLotMsg)}" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+        <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+        <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+      </svg>
+      Solicitar Projeto Sob Medida
+    </a>
   `;
   fragment.appendChild(customBanner);
 
