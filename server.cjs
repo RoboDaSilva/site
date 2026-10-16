@@ -102,7 +102,11 @@ const DEFAULT_SETTINGS = {
   hasLogo: fs.existsSync(path.join(IMAGES_DIR, 'logo.png')),
   logoMimeType: 'image/png',
   logoDataBase64: null,
-  logoUpdatedAt: Date.now()
+  logoUpdatedAt: Date.now(),
+  hasFavicon: fs.existsSync(path.join(IMAGES_DIR, 'favicon.png')),
+  faviconMimeType: 'image/png',
+  faviconDataBase64: null,
+  faviconUpdatedAt: Date.now()
 };
 
 if (!fs.existsSync(SETTINGS_FILE)) {
@@ -159,6 +163,42 @@ app.get('/images/logo.png', (req, res) => {
   const diskLogo = path.join(IMAGES_DIR, 'logo.png');
   if (fs.existsSync(diskLogo)) {
     return res.sendFile(diskLogo);
+  }
+
+  return res.status(404).end();
+});
+
+app.get('/images/favicon.png', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+
+  const settings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+
+  if (settings.hasFavicon !== false) {
+    if (settings.faviconDataBase64) {
+      const imgBuffer = Buffer.from(settings.faviconDataBase64, 'base64');
+      res.set('Content-Type', settings.faviconMimeType || 'image/png');
+      return res.send(imgBuffer);
+    }
+
+    const diskFavicon = path.join(IMAGES_DIR, 'favicon.png');
+    if (fs.existsSync(diskFavicon)) {
+      return res.sendFile(diskFavicon);
+    }
+  }
+
+  // Fallback para a logo caso nenhum favicon personalizado esteja definido
+  if (settings.hasLogo !== false) {
+    if (settings.logoDataBase64) {
+      const imgBuffer = Buffer.from(settings.logoDataBase64, 'base64');
+      res.set('Content-Type', settings.logoMimeType || 'image/png');
+      return res.send(imgBuffer);
+    }
+    const diskLogo = path.join(IMAGES_DIR, 'logo.png');
+    if (fs.existsSync(diskLogo)) {
+      return res.sendFile(diskLogo);
+    }
   }
 
   return res.status(404).end();
@@ -341,6 +381,9 @@ function renderIndexHtml(req, res) {
 
 app.get('/', renderIndexHtml);
 app.get('/index.html', renderIndexHtml);
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
+});
 
 app.use(express.static(__dirname));
 
@@ -460,10 +503,70 @@ app.delete('/api/logo', requireAuth, (req, res) => {
   }
 });
 
+app.post('/api/favicon', requireAuth, upload.single('favicon'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
+  try {
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const mimeType = req.file.mimetype || 'image/png';
+    const targetPath = path.join(IMAGES_DIR, 'favicon.png');
+
+    fs.writeFileSync(targetPath, fileBuffer);
+    if (fs.existsSync(req.file.path) && req.file.path !== targetPath) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    const currentSettings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+    const updatedSettings = {
+      ...currentSettings,
+      hasFavicon: true,
+      faviconMimeType: mimeType,
+      faviconDataBase64: fileBuffer.toString('base64'),
+      faviconUpdatedAt: Date.now()
+    };
+    writeJsonSafe(SETTINGS_FILE, updatedSettings);
+
+    return res.json({
+      success: true,
+      url: `/images/favicon.png?t=${updatedSettings.faviconUpdatedAt}`
+    });
+  } catch (err) {
+    console.error('Erro ao salvar favicon:', err);
+    return res.status(500).json({ error: 'Erro ao processar ícone' });
+  }
+});
+
+app.delete('/api/favicon', requireAuth, (req, res) => {
+  try {
+    const targetPath = path.join(IMAGES_DIR, 'favicon.png');
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+
+    const currentSettings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+    const updatedSettings = {
+      ...currentSettings,
+      hasFavicon: false,
+      faviconDataBase64: null,
+      faviconUpdatedAt: Date.now()
+    };
+    writeJsonSafe(SETTINGS_FILE, updatedSettings);
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao deletar favicon:', err);
+    return res.status(500).json({ error: 'Erro ao remover ícone' });
+  }
+});
+
 app.get('/api/settings', (req, res) => {
   const s = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
   const diskLogoExists = fs.existsSync(path.join(IMAGES_DIR, 'logo.png'));
   const hasLogo = s.hasLogo !== undefined ? Boolean(s.hasLogo) : diskLogoExists;
+  const diskFaviconExists = fs.existsSync(path.join(IMAGES_DIR, 'favicon.png'));
+  const hasFavicon = s.hasFavicon !== undefined ? Boolean(s.hasFavicon) : diskFaviconExists;
 
   res.json({
     instagram: s.instagram || '',
@@ -478,7 +581,9 @@ app.get('/api/settings', (req, res) => {
     address: s.address || 'Avenida Centenário 520, Maringá - PR',
     projectMeta: s.projectMeta || {},
     hasLogo,
-    logoUpdatedAt: s.logoUpdatedAt || Date.now()
+    logoUpdatedAt: s.logoUpdatedAt || Date.now(),
+    hasFavicon,
+    faviconUpdatedAt: s.faviconUpdatedAt || Date.now()
   });
 });
 

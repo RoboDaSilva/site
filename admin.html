@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin - Level Construtora</title>
-    <link rel="icon" type="image/png" href="/images/logo.png" />
+    <link id="admin-favicon" rel="icon" type="image/png" href="/images/favicon.png" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
     <style>
@@ -197,6 +197,35 @@
             <input type="file" id="form-logo" accept="image/*" required />
           </div>
           <button type="submit" class="submit-btn" id="submit-logo-btn">Salvar Logotipo</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Ícone da Aba do Navegador (Favicon)</h2>
+        <p style="font-size: 0.85rem; color: #999; margin-top: -0.75rem; margin-bottom: 1.25rem;">
+          Envie um ícone quadrado ou com bom contraste (ex: fundo escuro ou traço mais forte) para ficar bem visível tanto em abas claras quanto escuras do navegador.
+        </p>
+        <div style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <div style="background: #f1f3f4; color: #202124; padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; gap: 0.65rem;">
+              <img id="current-favicon-preview-light" src="/images/favicon.png" alt="Favicon Aba Clara" style="width: 24px; height: 24px; object-fit: contain; display: block;" onerror="this.style.display='none';" onload="this.style.display='block';">
+              <span style="font-size: 0.8rem; font-weight: 600;">Aba Clara</span>
+            </div>
+            <div style="background: #202124; color: #e8eaed; padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; gap: 0.65rem;">
+              <img id="current-favicon-preview-dark" src="/images/favicon.png" alt="Favicon Aba Escura" style="width: 24px; height: 24px; object-fit: contain; display: block;" onerror="this.style.display='none';" onload="this.style.display='block';">
+              <span style="font-size: 0.8rem; font-weight: 600;">Aba Escura</span>
+            </div>
+            <span id="favicon-status-badge" style="color: #aaa; font-size: 0.82rem;">Carregando...</span>
+          </div>
+          <button type="button" id="delete-favicon-btn" style="background: #ff4444; color: white; border: none; padding: 0.75rem 1.25rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">Restaurar Padrão</button>
+        </div>
+
+        <form id="favicon-form">
+          <div class="form-group">
+            <label>Enviar / Trocar Ícone da Aba (PNG, ICO, SVG, JPG, WebP)</label>
+            <input type="file" id="form-favicon" accept="image/*,.ico" required />
+          </div>
+          <button type="submit" class="submit-btn" id="submit-favicon-btn">Salvar Ícone da Aba</button>
         </form>
       </div>
 

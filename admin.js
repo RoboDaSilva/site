@@ -37,6 +37,15 @@ const deleteLogoBtn = document.getElementById('delete-logo-btn');
 const currentLogoPreview = document.getElementById('current-logo-preview');
 const noLogoText = document.getElementById('no-logo-text');
 
+const faviconForm = document.getElementById('favicon-form');
+const formFavicon = document.getElementById('form-favicon');
+const submitFaviconBtn = document.getElementById('submit-favicon-btn');
+const deleteFaviconBtn = document.getElementById('delete-favicon-btn');
+const currentFaviconPreviewLight = document.getElementById('current-favicon-preview-light');
+const currentFaviconPreviewDark = document.getElementById('current-favicon-preview-dark');
+const faviconStatusBadge = document.getElementById('favicon-status-badge');
+const adminFaviconLink = document.getElementById('admin-favicon');
+
 const settingsForm = document.getElementById('settings-form');
 const formInstagram = document.getElementById('form-instagram');
 const formInstagramEnabled = document.getElementById('form-instagram-enabled');
@@ -192,6 +201,18 @@ function reloadLogoPreview(hasLogo = true) {
   currentLogoPreview.src = `/images/logo.png?t=${Date.now()}`;
 }
 
+function reloadFaviconPreview(hasCustomFavicon = false) {
+  const url = `/images/favicon.png?t=${Date.now()}`;
+  if (currentFaviconPreviewLight) currentFaviconPreviewLight.src = url;
+  if (currentFaviconPreviewDark) currentFaviconPreviewDark.src = url;
+  if (adminFaviconLink) adminFaviconLink.href = url;
+  if (faviconStatusBadge) {
+    faviconStatusBadge.innerText = hasCustomFavicon
+      ? '✨ Ícone personalizado ativo'
+      : 'Usando logotipo padrão na aba';
+  }
+}
+
 async function fetchSettings() {
   try {
     const res = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' });
@@ -215,6 +236,7 @@ async function fetchSettings() {
     if (formAddress) formAddress.value = data.address || 'Avenida Centenário 520, Maringá - PR';
 
     reloadLogoPreview(data.hasLogo !== false);
+    reloadFaviconPreview(Boolean(data.hasFavicon));
   } catch (err) {
     console.error('Erro ao carregar configurações:', err);
   }
@@ -613,6 +635,66 @@ if (deleteLogoBtn) {
     } finally {
       deleteLogoBtn.innerText = originalBtnText;
       deleteLogoBtn.disabled = false;
+    }
+  });
+}
+
+if (faviconForm) {
+  faviconForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!formFavicon.files || !formFavicon.files.length) return;
+
+    const formData = new FormData();
+    formData.append('favicon', formFavicon.files[0]);
+
+    const originalBtnText = submitFaviconBtn.innerText;
+    submitFaviconBtn.innerText = 'Salvando...';
+    submitFaviconBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/favicon', {
+        method: 'POST',
+        headers: { 'Authorization': localStorage.getItem('adminToken') },
+        body: formData
+      });
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) throw new Error('Falha no upload do ícone');
+
+      alert('Ícone da aba (Favicon) salvo e atualizado com sucesso!');
+      faviconForm.reset();
+      reloadFaviconPreview(true);
+    } catch (err) {
+      alert('Falha ao enviar ícone da aba.');
+    } finally {
+      submitFaviconBtn.innerText = originalBtnText;
+      submitFaviconBtn.disabled = false;
+    }
+  });
+}
+
+if (deleteFaviconBtn) {
+  deleteFaviconBtn.addEventListener('click', async () => {
+    if (!confirm('Tem certeza que deseja remover o ícone personalizado da aba e voltar a usar o padrão?')) return;
+
+    const originalBtnText = deleteFaviconBtn.innerText;
+    deleteFaviconBtn.innerText = 'Restaurando...';
+    deleteFaviconBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/favicon', {
+        method: 'DELETE',
+        headers: { 'Authorization': localStorage.getItem('adminToken') }
+      });
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) throw new Error('Falha ao remover ícone');
+
+      alert('Ícone personalizado removido! O site voltou para o padrão.');
+      reloadFaviconPreview(false);
+    } catch (err) {
+      alert('Falha ao remover ícone da aba.');
+    } finally {
+      deleteFaviconBtn.innerText = originalBtnText;
+      deleteFaviconBtn.disabled = false;
     }
   });
 }

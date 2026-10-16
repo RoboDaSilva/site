@@ -1726,6 +1726,11 @@ const initApp = async () => {
           img.src = `/images/logo.png?t=${data.logoUpdatedAt || cacheBuster}`;
         }
       });
+
+      const siteFaviconEl = document.getElementById('site-favicon');
+      if (siteFaviconEl) {
+        siteFaviconEl.href = `/images/favicon.png?t=${data.faviconUpdatedAt || data.logoUpdatedAt || cacheBuster}`;
+      }
     }
 
     if (projectsRes && projectsRes.ok) {
