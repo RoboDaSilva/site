@@ -1,31 +1,156 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
 
+/* ==========================================================================
+   1. UTILITIES: DEBOUNCE, THROTTLE & RESPONSIVE VIEWPORT METRICS
+   ========================================================================== */
+const debounce = (fn, delay = 150) => {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const throttle = (fn, limit = 80) => {
+  let inThrottle = false;
+  return (...args) => {
+    if (!inThrottle) {
+      fn(...args);
+      inThrottle = true;
+      setTimeout(() => {
+        inThrottle = false;
+      }, limit);
+    }
+  };
+};
+
+// Calcula o FOV ideal (zoom = 1) com base na proporção da tela (Mobile-First)
+const getIdealBaseFov = () => {
+  const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+  if (aspect < 0.65) return 78; // Smartphones em retrato estreito
+  if (aspect < 1.0) return 70;  // Smartphones / Tablets em retrato
+  if (aspect > 2.2) return 54;  // Monitores Ultra-Wide
+  return 60;                    // Desktop padrão (16:9 / 16:10)
+};
+
+/* ==========================================================================
+   2. THREE.JS SCENE, CAMERA & RENDERER SETUP (OPTIMIZED FOR 60FPS)
+   ========================================================================== */
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
-scene.fog = new THREE.Fog(0x050505, 5, 25);
+scene.fog = new THREE.Fog(0x050505, 6, 28);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.z = 0;
+let baseFov = getIdealBaseFov();
+const camera = new THREE.PerspectiveCamera(baseFov, window.innerWidth / window.innerHeight, 0.1, 60);
+camera.position.set(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: window.devicePixelRatio < 2,
+  alpha: false,
+  powerPreference: 'high-performance',
+  stencil: false,
+  depth: true
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 container.appendChild(renderer.domElement);
 
 const galleryGroup = new THREE.Group();
 scene.add(galleryGroup);
 
 const textureLoader = new THREE.TextureLoader();
+const maxAnisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4);
 const loaderEl = document.getElementById('loader');
+
+// Geometrias compartilhadas (evita realocação na GPU e vazamento de memória)
 const cardGeometry = new THREE.PlaneGeometry(5.4, 4.5);
+const textPlaneGeometry = new THREE.PlaneGeometry(4.4, 1.1);
+
 let cards = [];
 let radius = 12;
-
 let allProjects = [];
 let siteSettings = {};
 
+// Instâncias reutilizáveis para evitar Garbage Collection no loop de eventos
+const pointerVec = new THREE.Vector2();
+const tempWorldPos = new THREE.Vector3();
+const raycaster = new THREE.Raycaster();
+
+/* ==========================================================================
+   3. CAMERA FOCUS, COORDINATE ANCHORING (X, Y) & ZOOM RESET
+   ========================================================================== */
+let isDetailView = false;
+let isRendering = true;
+let isTabVisible = !document.hidden;
+let activeCard = null;
+
+let isDragging = false;
+let pointerDownPos = { x: 0, y: 0 };
+let previousMousePosition = { x: 0, y: 0 };
+let targetRotation = { x: 0, y: 0 };
+let currentRotation = { x: 0, y: 0 };
+let hasMoved = false;
+let currentZoom = 1;
+let targetFov = baseFov;
+let autoRotatePauseUntil = 0;
+
+/**
+ * Centraliza a câmera exatamente nas coordenadas angulares (x, y) do conteúdo
+ * e redefine o nível de zoom para o padrão ideal de leitura (zoom = 1).
+ */
+const focusCameraAt = ({ x = 0, y = 0, zoom = 1, duration = 1.15, pauseAutoRotateMs = 3500 } = {}) => {
+  baseFov = getIdealBaseFov();
+  currentZoom = Math.max(0.6, Math.min(2.0, zoom));
+  targetFov = THREE.MathUtils.clamp(baseFov / currentZoom, 32, 95);
+
+  // Pausa a rotação automática temporariamente para garantir leitura imediata no centro
+  autoRotatePauseUntil = performance.now() + pauseAutoRotateMs;
+
+  // Normaliza o caminho angular mais curto no eixo Y para evitar giros bruscos de 360°
+  const twoPi = Math.PI * 2;
+  const deltaY = ((y - currentRotation.y + Math.PI) % twoPi + twoPi) % twoPi - Math.PI;
+  const shortestTargetY = currentRotation.y + deltaY;
+  const clampedTargetX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, x));
+
+  targetRotation.x = clampedTargetX;
+  targetRotation.y = shortestTargetY;
+
+  gsap.killTweensOf([currentRotation, camera.position, camera]);
+
+  gsap.to(currentRotation, {
+    x: clampedTargetX,
+    y: shortestTargetY,
+    duration,
+    ease: 'power3.out',
+    onUpdate: () => {
+      galleryGroup.rotation.x = currentRotation.x;
+      galleryGroup.rotation.y = currentRotation.y;
+    }
+  });
+
+  gsap.to(camera.position, {
+    x: 0,
+    y: 0,
+    z: 0,
+    duration,
+    ease: 'power3.out'
+  });
+
+  gsap.to(camera, {
+    fov: targetFov,
+    duration: duration * 0.85,
+    ease: 'power2.out',
+    onUpdate: () => {
+      camera.updateProjectionMatrix();
+    }
+  });
+};
+
+/* ==========================================================================
+   4. ANALYTICS & DATA HELPERS
+   ========================================================================== */
 const trackEvent = (eventName, params = {}) => {
   if (typeof window.gtag === 'function') {
     window.gtag('event', eventName, params);
@@ -76,7 +201,10 @@ const mergeProjectMeta = (projects, settings) => {
     .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 };
 
-const buildGallery = (projects) => {
+/* ==========================================================================
+   5. GALLERY BUILDER WITH ANCHORED SPHERICAL COORDINATES
+   ========================================================================== */
+const clearGallery = () => {
   while (galleryGroup.children.length > 0) {
     const child = galleryGroup.children[0];
     if (child.material) {
@@ -88,11 +216,37 @@ const buildGallery = (projects) => {
         if (subchild.material.map) subchild.material.map.dispose();
         subchild.material.dispose();
       }
-      if (subchild.geometry) subchild.geometry.dispose();
     });
     galleryGroup.remove(child);
   }
   cards = [];
+};
+
+const computeCardSphericalCoords = (index, count) => {
+  // O primeiro item (index === 0) é sempre ancorado exatamente no centro frontal (phi = PI/2, theta = PI)
+  // garantindo que em (X = 0, Y = 0) o card principal esteja 100% centralizado na tela.
+  if (count <= 1 || index === 0) {
+    return { phi: Math.PI / 2, theta: Math.PI };
+  }
+
+  if (count <= 4) {
+    return {
+      phi: Math.PI / 2,
+      theta: Math.PI + (index * (2 * Math.PI)) / count
+    };
+  }
+
+  const maxVerticalSpread = Math.min(0.68, count * 0.075);
+  const h = -maxVerticalSpread + (2 * maxVerticalSpread * index) / (count - 1);
+  const phi = Math.acos(h);
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const theta = Math.PI + index * Math.max(goldenAngle, (2 * Math.PI) / Math.min(count, 8));
+
+  return { phi, theta };
+};
+
+const buildGallery = (projects, { resetCamera = true } = {}) => {
+  clearGallery();
 
   const galleryItems = (projects || []).filter(p => {
     const facadePath = p.facades ? p.facades[0] : p.facade;
@@ -101,42 +255,56 @@ const buildGallery = (projects) => {
 
   if (galleryItems.length === 0) {
     if (loaderEl) {
-      loaderEl.innerText = 'Nenhum projeto cadastrado';
+      loaderEl.innerText = 'Nenhum projeto encontrado';
       loaderEl.style.display = 'block';
-      gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
+      gsap.to(loaderEl, { opacity: 1, duration: 0.25 });
     }
     return;
   }
 
   const count = galleryItems.length;
-  radius = Math.max(8, 2.8 * Math.sqrt(count));
+  radius = Math.max(8.5, 2.75 * Math.sqrt(count));
 
-  let processedCount = 0;
+  if (resetCamera) {
+    focusCameraAt({ x: 0, y: 0, zoom: 1, duration: 1.1 });
+  }
+
+  let firstLoaded = false;
   if (loaderEl) {
     loaderEl.innerText = 'Carregando Galeria...';
     loaderEl.style.display = 'block';
-    gsap.to(loaderEl, { opacity: 1, duration: 0.3 });
+    gsap.to(loaderEl, { opacity: 1, duration: 0.2 });
   }
 
-  const checkDone = () => {
-    processedCount++;
-    if (processedCount >= galleryItems.length && loaderEl) {
-      gsap.to(loaderEl, {
-        opacity: 0,
-        duration: 0.5,
-        onComplete: () => { loaderEl.style.display = 'none'; }
-      });
-    }
+  const hideLoaderOnceReady = () => {
+    if (firstLoaded || !loaderEl) return;
+    firstLoaded = true;
+    gsap.to(loaderEl, {
+      opacity: 0,
+      duration: 0.35,
+      onComplete: () => {
+        loaderEl.style.display = 'none';
+      }
+    });
   };
 
   galleryItems.forEach((item, index) => {
     const imgUrl = item.facades ? item.facades[0] : item.facade;
+    const { phi, theta } = computeCardSphericalCoords(index, count);
+
+    // Coordenadas angulares exatas (X, Y) para focar este card diretamente no centro da viewport
+    const anchorCoords = {
+      x: phi - Math.PI / 2,
+      y: Math.PI - theta
+    };
 
     textureLoader.load(
       imgUrl,
       (texture) => {
+        texture.anisotropy = maxAnisotropy;
         texture.generateMipmaps = true;
         texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
 
         const material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -146,7 +314,10 @@ const buildGallery = (projects) => {
         });
 
         const card = new THREE.Mesh(cardGeometry, material);
-        card.userData = item;
+        card.userData = {
+          ...item,
+          anchorCoords
+        };
 
         let textMaterial = null;
         if (item.lotSize) {
@@ -154,8 +325,8 @@ const buildGallery = (projects) => {
           canvas.width = 512;
           canvas.height = 128;
           const context = canvas.getContext('2d');
-          context.font = '300 36px Inter, sans-serif';
-          context.fillStyle = 'rgba(255, 255, 255, 0.85)';
+          context.font = '400 34px Inter, sans-serif';
+          context.fillStyle = 'rgba(255, 255, 255, 0.9)';
           context.textAlign = 'center';
           context.textBaseline = 'middle';
           const labelText = item.area ? `Lote: ${item.lotSize} • ${item.area}` : `Lote: ${item.lotSize}`;
@@ -164,26 +335,15 @@ const buildGallery = (projects) => {
           const textTexture = new THREE.CanvasTexture(canvas);
           textTexture.minFilter = THREE.LinearFilter;
 
-          textMaterial = new THREE.MeshBasicMaterial({ map: textTexture, transparent: true, opacity: 0 });
-          const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.1), textMaterial);
+          textMaterial = new THREE.MeshBasicMaterial({
+            map: textTexture,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false
+          });
+          const textPlane = new THREE.Mesh(textPlaneGeometry, textMaterial);
           textPlane.position.y = -2.8;
           card.add(textPlane);
-        }
-
-        let phi = Math.PI / 2;
-        let theta = Math.PI;
-
-        if (count === 1) {
-          phi = Math.PI / 2;
-          theta = Math.PI;
-        } else if (count <= 4) {
-          phi = Math.PI / 2;
-          theta = Math.PI + (index * (2 * Math.PI)) / count;
-        } else {
-          const maxVerticalSpread = Math.min(0.75, count * 0.08);
-          const h = -maxVerticalSpread + (2 * maxVerticalSpread * index) / (count - 1);
-          phi = Math.acos(h);
-          theta = Math.sqrt(count * Math.PI) * phi;
         }
 
         card.position.setFromSphericalCoords(radius, phi, theta);
@@ -192,25 +352,23 @@ const buildGallery = (projects) => {
         galleryGroup.add(card);
         cards.push(card);
 
-        const delay = Math.random() * 0.4;
-        gsap.to(material, { opacity: 1, duration: 1, delay });
-        if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 1, delay });
+        const delay = Math.min(index * 0.06, 0.35);
+        gsap.to(material, { opacity: 1, duration: 0.75, delay });
+        if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 0.75, delay });
 
-        checkDone();
+        hideLoaderOnceReady();
       },
       undefined,
       () => {
-        checkDone();
+        hideLoaderOnceReady();
       }
     );
   });
 };
 
-const raycaster = new THREE.Raycaster();
-let isDetailView = false;
-let isRendering = true;
-let activeCard = null;
-
+/* ==========================================================================
+   6. POINTER, WHEEL & TOUCH INTERACTION (MOBILE-FIRST & THROTTLED)
+   ========================================================================== */
 const detailOverlay = document.getElementById('detail-overlay');
 const detailTitle = document.getElementById('detail-title');
 const detailSubtitle = document.getElementById('detail-subtitle');
@@ -221,20 +379,6 @@ const detailVideoWrapper = document.getElementById('detail-video-wrapper');
 const detailFacadesContainer = document.getElementById('detail-facades-container');
 const detailPlansContainer = document.getElementById('detail-plans-container');
 const backBtn = document.getElementById('back-btn');
-
-let isDragging = false;
-let pointerDownPos = { x: 0, y: 0 };
-let previousMousePosition = { x: 0, y: 0 };
-let targetRotation = { x: 0, y: 0 };
-let currentRotation = { x: 0, y: 0 };
-let hasMoved = false;
-let targetFov = 60;
-
-window.addEventListener('wheel', (e) => {
-  if (isDetailView) return;
-  targetFov += e.deltaY * 0.05;
-  targetFov = Math.max(30, Math.min(100, targetFov));
-}, { passive: true });
 
 const isUIElement = (target) => {
   if (!target || typeof target.closest !== 'function') return false;
@@ -255,34 +399,72 @@ const getCardFromIntersection = (intersectObj) => {
   return obj;
 };
 
+// Hover raycast otimizado com throttle (não roda durante drag nem bloqueia 60fps)
+const updateHoverCursor = throttle((clientX, clientY) => {
+  if (isDetailView || isDragging || cards.length === 0) return;
+  pointerVec.set(
+    (clientX / window.innerWidth) * 2 - 1,
+    -(clientY / window.innerHeight) * 2 + 1
+  );
+  raycaster.setFromCamera(pointerVec, camera);
+  const intersects = raycaster.intersectObjects(cards, false);
+  document.body.style.cursor = intersects.length > 0 ? 'pointer' : 'grab';
+}, 90);
+
+// Suporte a Pinch-to-Zoom suave no Mobile
+const activePointers = new Map();
+let initialPinchDistance = null;
+let initialPinchFov = baseFov;
+
+const getPinchDistance = () => {
+  const pts = Array.from(activePointers.values());
+  if (pts.length < 2) return 0;
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+};
+
 const onPointerDown = (e) => {
   if (isDetailView || isUIElement(e.target)) return;
+
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size === 2) {
+    isDragging = false;
+    hasMoved = true;
+    initialPinchDistance = getPinchDistance();
+    initialPinchFov = targetFov;
+    return;
+  }
+
   isDragging = true;
   hasMoved = false;
   pointerDownPos = { x: e.clientX, y: e.clientY };
   previousMousePosition = { x: e.clientX, y: e.clientY };
-  document.body.style.cursor = 'grabbing';
+  if (e.pointerType === 'mouse') {
+    document.body.style.cursor = 'grabbing';
+  }
 };
 
 const onPointerMove = (e) => {
   if (isDetailView) return;
 
-  if (e.pointerType === 'mouse') {
-    const mouse = new THREE.Vector2(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1
-    );
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(cards, true);
-
-    if (intersects.length > 0) {
-      document.body.style.cursor = isDragging ? 'grabbing' : 'pointer';
-    } else {
-      document.body.style.cursor = isDragging ? 'grabbing' : 'grab';
-    }
+  if (activePointers.has(e.pointerId)) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   }
 
-  if (!isDragging) return;
+  // Pinch-to-zoom com 2 dedos no mobile
+  if (activePointers.size === 2 && initialPinchDistance > 0) {
+    const currentDist = getPinchDistance();
+    const scale = initialPinchDistance / Math.max(20, currentDist);
+    targetFov = THREE.MathUtils.clamp(initialPinchFov * scale, 35, 92);
+    return;
+  }
+
+  if (!isDragging) {
+    if (e.pointerType === 'mouse' && !isUIElement(e.target)) {
+      updateHoverCursor(e.clientX, e.clientY);
+    }
+    return;
+  }
 
   const totalDeltaX = e.clientX - pointerDownPos.x;
   const totalDeltaY = e.clientY - pointerDownPos.y;
@@ -292,35 +474,44 @@ const onPointerMove = (e) => {
     hasMoved = true;
   }
 
-  const deltaMove = {
-    x: e.clientX - previousMousePosition.x,
-    y: e.clientY - previousMousePosition.y
-  };
+  const deltaMoveX = e.clientX - previousMousePosition.x;
+  const deltaMoveY = e.clientY - previousMousePosition.y;
 
-  targetRotation.y += deltaMove.x * 0.005;
-  targetRotation.x += deltaMove.y * 0.005;
-  targetRotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, targetRotation.x));
+  const sensitivity = e.pointerType === 'touch' ? 0.0045 : 0.0038;
+  targetRotation.y += deltaMoveX * sensitivity;
+  targetRotation.x = THREE.MathUtils.clamp(
+    targetRotation.x + deltaMoveY * sensitivity,
+    -Math.PI / 3.2,
+    Math.PI / 3.2
+  );
 
   previousMousePosition = { x: e.clientX, y: e.clientY };
 };
 
 const onPointerUp = (e) => {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) {
+    initialPinchDistance = null;
+  }
+
   if (isDetailView) return;
   const wasDragging = isDragging;
   isDragging = false;
-  document.body.style.cursor = 'grab';
+  if (e.pointerType === 'mouse') {
+    document.body.style.cursor = 'grab';
+  }
 
   if (!wasDragging || hasMoved || isUIElement(e.target)) return;
 
   camera.updateMatrixWorld();
   galleryGroup.updateMatrixWorld(true);
 
-  const pointer = new THREE.Vector2(
+  pointerVec.set(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1
   );
 
-  raycaster.setFromCamera(pointer, camera);
+  raycaster.setFromCamera(pointerVec, camera);
   const intersects = raycaster.intersectObjects(cards, true);
 
   if (intersects.length > 0) {
@@ -331,17 +522,31 @@ const onPointerUp = (e) => {
   }
 };
 
-const onPointerCancel = () => {
+const onPointerCancel = (e) => {
+  if (e && e.pointerId !== undefined) {
+    activePointers.delete(e.pointerId);
+  } else {
+    activePointers.clear();
+  }
+  initialPinchDistance = null;
   isDragging = false;
   document.body.style.cursor = 'grab';
 };
 
-window.addEventListener('pointerdown', onPointerDown);
-window.addEventListener('pointermove', onPointerMove);
-window.addEventListener('pointerup', onPointerUp);
-window.addEventListener('pointercancel', onPointerCancel);
-window.addEventListener('pointerleave', onPointerCancel);
+window.addEventListener('wheel', (e) => {
+  if (isDetailView || isUIElement(e.target)) return;
+  targetFov = THREE.MathUtils.clamp(targetFov + e.deltaY * 0.04, 32, 92);
+}, { passive: true });
 
+window.addEventListener('pointerdown', onPointerDown, { passive: true });
+window.addEventListener('pointermove', onPointerMove, { passive: true });
+window.addEventListener('pointerup', onPointerUp, { passive: true });
+window.addEventListener('pointercancel', onPointerCancel, { passive: true });
+window.addEventListener('pointerleave', onPointerCancel, { passive: true });
+
+/* ==========================================================================
+   7. PROJECT DETAIL OVERLAY
+   ========================================================================== */
 const openDetail = (card) => {
   if (isDetailView) return;
   isDetailView = true;
@@ -368,12 +573,14 @@ const openDetail = (card) => {
     data.status ? `✨ ${data.status}` : null
   ].filter(Boolean);
 
+  const specsFragment = document.createDocumentFragment();
   badges.forEach(text => {
     const span = document.createElement('span');
     span.className = 'spec-badge';
     span.innerText = text;
-    detailSpecs.appendChild(span);
+    specsFragment.appendChild(span);
   });
+  detailSpecs.appendChild(specsFragment);
 
   if (detailWhatsappBtn) {
     let basePhone = '5544998641000';
@@ -394,7 +601,7 @@ const openDetail = (card) => {
     const embedUrl = getYoutubeEmbedUrl(data.videoUrl);
     if (embedUrl) {
       detailVideoWrapper.style.display = 'block';
-      detailVideoWrapper.innerHTML = `<iframe src="${embedUrl}" title="${data.title}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      detailVideoWrapper.innerHTML = `<iframe src="${embedUrl}" title="${data.title || 'Vídeo do Projeto'}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
     } else {
       detailVideoWrapper.style.display = 'none';
       detailVideoWrapper.innerHTML = '';
@@ -402,52 +609,51 @@ const openDetail = (card) => {
   }
 
   detailFacadesContainer.innerHTML = '';
-  const facadesArray = data.facades || [data.facade];
-  facadesArray.forEach(path => {
-    if (!path) return;
+  const facadesArray = (data.facades || [data.facade]).filter(Boolean);
+  const facadesFragment = document.createDocumentFragment();
+  facadesArray.forEach((path, idx) => {
     const img = document.createElement('img');
     img.src = path;
-    img.alt = `${data.title || 'Projeto'} - Fachada`;
-    img.loading = 'lazy';
-    img.style.width = '100%';
-    img.style.borderRadius = '1rem';
-    detailFacadesContainer.appendChild(img);
+    img.alt = `${data.title || 'Projeto'} - Fachada ${idx + 1}`;
+    img.loading = idx === 0 ? 'eager' : 'lazy';
+    img.decoding = 'async';
+    facadesFragment.appendChild(img);
   });
+  detailFacadesContainer.appendChild(facadesFragment);
 
   detailPlansContainer.innerHTML = '';
   const plansArray = (data.plans || [data.plan]).filter(Boolean);
   detailPlansContainer.style.display = plansArray.length > 0 ? 'flex' : 'none';
-  plansArray.forEach(path => {
+  const plansFragment = document.createDocumentFragment();
+  plansArray.forEach((path, idx) => {
     const img = document.createElement('img');
     img.src = path;
-    img.alt = `${data.title || 'Projeto'} - Planta`;
+    img.alt = `${data.title || 'Projeto'} - Planta ${idx + 1}`;
     img.loading = 'lazy';
-    img.style.width = '100%';
-    img.style.borderRadius = '1rem';
-    detailPlansContainer.appendChild(img);
+    img.decoding = 'async';
+    plansFragment.appendChild(img);
   });
+  detailPlansContainer.appendChild(plansFragment);
 
-  const targetPos = new THREE.Vector3();
-  card.getWorldPosition(targetPos);
-  const camTargetPos = targetPos.clone().multiplyScalar(0.7);
+  card.getWorldPosition(tempWorldPos);
+  const camTargetPos = tempWorldPos.clone().multiplyScalar(0.68);
 
   gsap.to(camera.position, {
     x: camTargetPos.x,
     y: camTargetPos.y,
     z: camTargetPos.z,
-    duration: 1.5,
+    duration: 1.2,
     ease: 'power3.inOut'
   });
 
-  detailOverlay.style.display = 'block';
-  detailOverlay.style.pointerEvents = 'auto';
+  detailOverlay.style.display = 'flex';
   detailOverlay.classList.add('active-detail');
   detailOverlay.scrollTop = 0;
 
   gsap.to(detailOverlay, {
     autoAlpha: 1,
-    duration: 1,
-    delay: 0.6,
+    duration: 0.75,
+    delay: 0.4,
     ease: 'power2.out',
     onComplete: () => {
       isRendering = false;
@@ -458,30 +664,31 @@ const openDetail = (card) => {
 const closeDetail = () => {
   if (!isDetailView) return;
   isRendering = true;
-  detailOverlay.style.pointerEvents = 'none';
   detailOverlay.classList.remove('active-detail');
 
   if (detailVideoWrapper) {
     detailVideoWrapper.innerHTML = '';
   }
 
+  // Ao voltar para a galeria, garante que o card ativo esteja centralizado e com zoom padrão (zoom = 1)
+  const returnCoords = activeCard && activeCard.userData && activeCard.userData.anchorCoords
+    ? activeCard.userData.anchorCoords
+    : { x: currentRotation.x, y: currentRotation.y };
+
   gsap.to(detailOverlay, {
     autoAlpha: 0,
-    duration: 0.5,
+    duration: 0.4,
     ease: 'power2.in',
     onComplete: () => {
       detailOverlay.style.display = 'none';
-      gsap.to(camera.position, {
-        x: 0,
-        y: 0,
-        z: 0,
-        duration: 1.5,
-        ease: 'power3.inOut',
-        onComplete: () => {
-          isDetailView = false;
-          activeCard = null;
-        }
+      focusCameraAt({
+        x: returnCoords.x,
+        y: returnCoords.y,
+        zoom: 1,
+        duration: 1.15
       });
+      isDetailView = false;
+      activeCard = null;
     }
   });
 };
@@ -496,6 +703,162 @@ if (backBtn) {
   });
 }
 
+/* ==========================================================================
+   8. MENU / SEARCH OVERLAY WITH COORDINATE ANCHORING & ZOOM RESET
+   ========================================================================== */
+const openSearchBtn = document.getElementById('open-search-btn');
+const closeSearchBtn = document.getElementById('close-search-btn');
+const searchOverlay = document.getElementById('search-overlay');
+const searchOptionsContainer = document.getElementById('search-options-container');
+let currentFilter = null;
+
+const closeSearchMenu = () => {
+  if (!searchOverlay || !searchOverlay.classList.contains('active')) return;
+  if (window.location.hash === '#pesquisa') {
+    history.back();
+  } else {
+    searchOverlay.classList.remove('active');
+  }
+};
+
+const applyMenuFilterAndFocus = (filterKey, filteredProjects) => {
+  currentFilter = filterKey;
+  // Reconstrói a galeria ancorando o item principal em (X = 0, Y = 0) e reseta o zoom = 1
+  buildGallery(filteredProjects, { resetCamera: true });
+  closeSearchMenu();
+};
+
+const createMenuButton = (label, isActive, onClick) => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'submit-btn';
+  btn.style.background = isActive ? '#ffffff' : 'transparent';
+  btn.style.color = isActive ? '#050505' : '#ffffff';
+  btn.style.border = isActive ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.35)';
+  btn.innerText = label;
+  btn.addEventListener('click', onClick);
+  return btn;
+};
+
+if (openSearchBtn && searchOverlay && searchOptionsContainer) {
+  openSearchBtn.addEventListener('click', () => {
+    trackEvent('abrir_filtro_projetos');
+    searchOverlay.classList.add('active');
+    if (window.location.hash !== '#pesquisa') {
+      history.pushState({ view: 'search' }, '', '#pesquisa');
+    }
+
+    const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
+    const types = [...new Set(allProjects.map(p => p.houseType).filter(Boolean))];
+    searchOptionsContainer.innerHTML = '';
+
+    const fragment = document.createDocumentFragment();
+
+    // Opção 1: Ver Todos (reseta filtro, reseta zoom = 1 e centraliza câmera em X=0, Y=0)
+    fragment.appendChild(
+      createMenuButton(`Ver Todos (${allProjects.length})`, currentFilter === null, () => {
+        applyMenuFilterAndFocus(null, allProjects);
+      })
+    );
+
+    // Opção 2: Filtro por Tipo de Imóvel
+    if (types.length > 0) {
+      const typeLabel = document.createElement('p');
+      typeLabel.className = 'menu-section-label';
+      typeLabel.innerText = 'Por Tipo de Imóvel';
+      fragment.appendChild(typeLabel);
+
+      types.forEach(t => {
+        const filterKey = `type:${t}`;
+        fragment.appendChild(
+          createMenuButton(t, currentFilter === filterKey, () => {
+            const filtered = allProjects.filter(p => p.houseType === t);
+            applyMenuFilterAndFocus(filterKey, filtered);
+          })
+        );
+      });
+    }
+
+    // Opção 3: Filtro por Medida de Lote
+    if (sizes.length > 0) {
+      const sizeLabel = document.createElement('p');
+      sizeLabel.className = 'menu-section-label';
+      sizeLabel.innerText = 'Por Medida de Lote';
+      fragment.appendChild(sizeLabel);
+
+      sizes.forEach(size => {
+        fragment.appendChild(
+          createMenuButton(`Lote ${size}`, currentFilter === size, () => {
+            const filtered = allProjects.filter(p => p.lotSize === size);
+            applyMenuFilterAndFocus(size, filtered);
+          })
+        );
+      });
+    }
+
+    // Opção 4: Navegação Direta para Projetos na Galeria (foca exatamente nas coordenadas X,Y do card com zoom = 1)
+    if (allProjects.length > 0) {
+      const projectsLabel = document.createElement('p');
+      projectsLabel.className = 'menu-section-label';
+      projectsLabel.innerText = 'Ir Direto para o Projeto';
+      fragment.appendChild(projectsLabel);
+
+      allProjects.forEach(proj => {
+        const titleText = proj.lotSize ? `${proj.title} (${proj.lotSize})` : (proj.title || 'Projeto');
+        const filterKey = `project:${proj.id || proj.title}`;
+        fragment.appendChild(
+          createMenuButton(titleText, currentFilter === filterKey, () => {
+            currentFilter = filterKey;
+            // Se um filtro anterior ocultou este card, restaura todos os projetos antes de focar
+            let targetCard = cards.find(c => c.userData && (c.userData.id === proj.id && c.userData.title === proj.title));
+            if (!targetCard) {
+              buildGallery(allProjects, { resetCamera: false });
+              const projIndex = allProjects.findIndex(p => p.id === proj.id && p.title === proj.title);
+              const { phi, theta } = computeCardSphericalCoords(Math.max(0, projIndex), allProjects.length);
+              focusCameraAt({
+                x: phi - Math.PI / 2,
+                y: Math.PI - theta,
+                zoom: 1,
+                duration: 1.2
+              });
+            } else {
+              const { x, y } = targetCard.userData.anchorCoords || { x: 0, y: 0 };
+              focusCameraAt({ x, y, zoom: 1, duration: 1.2 });
+            }
+            closeSearchMenu();
+          })
+        );
+      });
+    }
+
+    searchOptionsContainer.appendChild(fragment);
+  });
+}
+
+if (closeSearchBtn) {
+  closeSearchBtn.addEventListener('click', closeSearchMenu);
+}
+
+if (searchOverlay) {
+  // Permite fechar o menu clicando fora do modal (no backdrop)
+  searchOverlay.addEventListener('click', (e) => {
+    if (e.target === searchOverlay) {
+      closeSearchMenu();
+    }
+  });
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (searchOverlay && searchOverlay.classList.contains('active')) {
+      closeSearchMenu();
+    } else if (isDetailView) {
+      if (window.location.hash === '#projeto') history.back();
+      else closeDetail();
+    }
+  }
+});
+
 window.addEventListener('popstate', () => {
   if (isDetailView) {
     closeDetail();
@@ -505,95 +868,9 @@ window.addEventListener('popstate', () => {
   }
 });
 
-const openSearchBtn = document.getElementById('open-search-btn');
-const closeSearchBtn = document.getElementById('close-search-btn');
-const searchOverlay = document.getElementById('search-overlay');
-const searchOptionsContainer = document.getElementById('search-options-container');
-let currentFilter = null;
-
-if (openSearchBtn && searchOverlay && searchOptionsContainer) {
-  openSearchBtn.addEventListener('click', () => {
-    trackEvent('abrir_filtro_projetos');
-    searchOverlay.classList.add('active');
-    history.pushState({ view: 'search' }, '', '#pesquisa');
-    const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
-    const types = [...new Set(allProjects.map(p => p.houseType).filter(Boolean))];
-    searchOptionsContainer.innerHTML = '';
-
-    const btnAll = document.createElement('button');
-    btnAll.className = 'submit-btn';
-    btnAll.style.background = currentFilter === null ? '#fff' : 'transparent';
-    btnAll.style.color = currentFilter === null ? '#000' : '#fff';
-    btnAll.style.border = '1px solid #fff';
-    btnAll.innerText = `Ver Todos (${allProjects.length})`;
-    btnAll.addEventListener('click', () => {
-      currentFilter = null;
-      buildGallery(allProjects);
-      if (window.location.hash === '#pesquisa') history.back();
-      else searchOverlay.classList.remove('active');
-    });
-    searchOptionsContainer.appendChild(btnAll);
-
-    if (types.length > 1) {
-      const typeLabel = document.createElement('p');
-      typeLabel.style.cssText = 'margin: 0.75rem 0 0.25rem 0; font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em;';
-      typeLabel.innerText = 'Por Tipo de Imóvel';
-      searchOptionsContainer.appendChild(typeLabel);
-
-      types.forEach(t => {
-        const btn = document.createElement('button');
-        btn.className = 'submit-btn';
-        btn.style.background = currentFilter === `type:${t}` ? '#fff' : 'transparent';
-        btn.style.color = currentFilter === `type:${t}` ? '#000' : '#fff';
-        btn.style.border = '1px solid rgba(255,255,255,0.5)';
-        btn.innerText = t;
-        btn.addEventListener('click', () => {
-          currentFilter = `type:${t}`;
-          const filtered = allProjects.filter(p => p.houseType === t);
-          buildGallery(filtered);
-          if (window.location.hash === '#pesquisa') history.back();
-          else searchOverlay.classList.remove('active');
-        });
-        searchOptionsContainer.appendChild(btn);
-      });
-    }
-
-    if (sizes.length > 0) {
-      const sizeLabel = document.createElement('p');
-      sizeLabel.style.cssText = 'margin: 0.75rem 0 0.25rem 0; font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em;';
-      sizeLabel.innerText = 'Por Medida de Lote';
-      searchOptionsContainer.appendChild(sizeLabel);
-
-      sizes.forEach(size => {
-        const btn = document.createElement('button');
-        btn.className = 'submit-btn';
-        btn.style.background = currentFilter === size ? '#fff' : 'transparent';
-        btn.style.color = currentFilter === size ? '#000' : '#fff';
-        btn.style.border = '1px solid #fff';
-        btn.innerText = `Lote ${size}`;
-        btn.addEventListener('click', () => {
-          currentFilter = size;
-          const filtered = allProjects.filter(p => p.lotSize === size);
-          buildGallery(filtered);
-          if (window.location.hash === '#pesquisa') history.back();
-          else searchOverlay.classList.remove('active');
-        });
-        searchOptionsContainer.appendChild(btn);
-      });
-    }
-  });
-}
-
-if (closeSearchBtn && searchOverlay) {
-  closeSearchBtn.addEventListener('click', () => {
-    if (window.location.hash === '#pesquisa') {
-      history.back();
-    } else {
-      searchOverlay.classList.remove('active');
-    }
-  });
-}
-
+/* ==========================================================================
+   9. FAST PARALLEL INITIALIZATION & SOCIAL LINKS
+   ========================================================================== */
 const linkInstagram = document.getElementById('link-instagram');
 const linkFacebook = document.getElementById('link-facebook');
 const linkYoutube = document.getElementById('link-youtube');
@@ -619,7 +896,13 @@ const updateSocialLink = (element, url, enabled) => {
 
 const initApp = async () => {
   try {
-    const settingsRes = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    const cacheBuster = Date.now();
+    // Carregamento paralelo para reduzir pela metade o tempo de espera na inicialização
+    const [settingsRes, projectsRes] = await Promise.all([
+      fetch(`/api/settings?t=${cacheBuster}`, { cache: 'no-store' }).catch(() => null),
+      fetch(`/api/projects?t=${cacheBuster}`, { cache: 'no-store' }).catch(() => null)
+    ]);
+
     if (settingsRes && settingsRes.ok) {
       const data = await settingsRes.json();
       siteSettings = data || {};
@@ -650,22 +933,21 @@ const initApp = async () => {
           img.style.display = 'none';
         } else {
           img.style.display = 'block';
-          img.src = `/images/logo.png?t=${data.logoUpdatedAt || Date.now()}`;
+          img.src = `/images/logo.png?t=${data.logoUpdatedAt || cacheBuster}`;
         }
       });
     }
 
-    const projectsRes = await fetch(`/api/projects?t=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
     if (projectsRes && projectsRes.ok) {
       const rawProjects = await projectsRes.json();
       allProjects = mergeProjectMeta(rawProjects, siteSettings);
-      buildGallery(allProjects);
+      buildGallery(allProjects, { resetCamera: true });
     } else {
-      buildGallery([]);
+      buildGallery([], { resetCamera: true });
     }
   } catch (err) {
     console.error('Erro ao inicializar:', err);
-    buildGallery([]);
+    buildGallery([], { resetCamera: true });
   }
 };
 
@@ -673,20 +955,39 @@ initApp();
 
 document.body.style.cursor = 'grab';
 
-const tick = () => {
+/* ==========================================================================
+   10. HIGH-EFFICIENCY 60FPS RENDER LOOP & DEBOUNCED RESIZE
+   ========================================================================== */
+document.addEventListener('visibilitychange', () => {
+  isTabVisible = !document.hidden;
+});
+
+let lastFrameTime = performance.now();
+
+const tick = (now = performance.now()) => {
+  requestAnimationFrame(tick);
+
+  const deltaSeconds = Math.min((now - lastFrameTime) / 1000, 0.1);
+  lastFrameTime = now;
+
+  if (!isTabVisible) return;
+
   if (!isDetailView) {
-    currentRotation.x = gsap.utils.interpolate(currentRotation.x, targetRotation.x, 0.05);
-    currentRotation.y = gsap.utils.interpolate(currentRotation.y, targetRotation.y, 0.05);
+    // Interpolação independente de taxa de quadros (frame-rate independent damping)
+    const damping = 1 - Math.pow(0.001, deltaSeconds);
+
+    currentRotation.x += (targetRotation.x - currentRotation.x) * damping;
+    currentRotation.y += (targetRotation.y - currentRotation.y) * damping;
 
     galleryGroup.rotation.x = currentRotation.x;
     galleryGroup.rotation.y = currentRotation.y;
 
-    if (!isDragging) {
-      targetRotation.y -= 0.0005;
+    if (!isDragging && activePointers.size === 0 && now > autoRotatePauseUntil) {
+      targetRotation.y -= 0.032 * deltaSeconds;
     }
 
     if (Math.abs(camera.fov - targetFov) > 0.01) {
-      camera.fov = gsap.utils.interpolate(camera.fov, targetFov, 0.05);
+      camera.fov += (targetFov - camera.fov) * damping;
       camera.updateProjectionMatrix();
     }
   }
@@ -694,16 +995,24 @@ const tick = () => {
   if (isRendering) {
     renderer.render(scene, camera);
   }
-  requestAnimationFrame(tick);
 };
 
-tick();
+requestAnimationFrame(tick);
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+const handleResize = debounce(() => {
+  const width = window.innerWidth;
+  const height = Math.max(1, window.innerHeight);
+
+  baseFov = getIdealBaseFov();
+  targetFov = THREE.MathUtils.clamp(baseFov / currentZoom, 32, 95);
+
+  camera.aspect = width / height;
+  camera.fov = targetFov;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-});
 
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+}, 120);
+
+window.addEventListener('resize', handleResize, { passive: true });
 document.addEventListener('contextmenu', event => event.preventDefault());
