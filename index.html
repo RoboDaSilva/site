@@ -201,7 +201,7 @@
     <!-- Onboarding Gesture Hint (3D Affordance) -->
     <div id="gesture-hint" class="gesture-hint" aria-hidden="true">
       <span class="gesture-icon">↔</span>
-      <span>Arraste em 360° para explorar • Toque num projeto para abrir</span>
+      <span>Arraste em 360° para explorar • Toque num projeto</span>
     </div>
 
     <!-- Search / Multi-Filter Overlay -->
@@ -315,6 +315,10 @@
                 <strong>🔑 Obra Completa (Da Planta às Chaves)</strong>
                 <span>Projetos completos + gestão e execução total pela Level Construtora</span>
               </button>
+              <button type="button" class="sim-option-card" data-field="scope" data-value="Construção Financiada (Obra ou Aquisição de Terreno + Construção)">
+                <strong>🏦 Construção Financiada</strong>
+                <span>Construir com financiamento ou aquisição de lote e construção</span>
+              </button>
               <button type="button" class="sim-option-card" data-field="scope" data-value="Apenas Projetos (Arquitetônico 3D + Engenharia)">
                 <strong>📐 Projetos Executivos (Arquitetura + Engenharia)</strong>
                 <span>Fachada 3D, planta humanizada, estrutural, elétrico e hidrossanitário</span>
@@ -329,18 +333,18 @@
             </div>
           </div>
 
-          <!-- Step 5: Resultado + Recomendações -->
+          <!-- Step 5: Resultado -->
           <div class="sim-step" data-step="5">
             <p class="sim-step-counter">Diagnóstico Concluído</p>
             <h3 class="sim-question">Seu Perfil de Projeto está Pronto!</h3>
             <div id="sim-summary-box" class="sim-summary-box"></div>
 
-            <div id="sim-recommendations-wrapper" class="sim-recommendations-wrapper">
-              <p class="menu-section-label">Projetos Compatíveis na Galeria</p>
-              <div id="sim-recommendations-list" class="sim-recommendations-list"></div>
-            </div>
-
-            <a id="sim-whatsapp-cta" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 1.25rem; width: 100%;">
+            <a id="sim-whatsapp-cta" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 0.5rem; width: 100%;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+                <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+              </svg>
               Receber Orçamento e Estudo no WhatsApp
             </a>
             <div class="sim-footer-nav" style="margin-top: 0.85rem; justify-content: space-between;">
@@ -418,11 +422,23 @@
     <!-- Detail Page Overlay -->
     <div id="detail-overlay">
       <div class="detail-header">
-        <button id="back-btn" class="back-btn" type="button">&larr; VOLTAR PARA GALERIA</button>
+        <button id="back-btn" class="back-btn detail-back-btn" type="button">&larr; VOLTAR</button>
         <div class="detail-header-actions">
-          <button id="detail-fav-btn" class="back-btn detail-action-pill" type="button" title="Salvar para comparar">♡ FAVORITAR</button>
-          <button id="detail-share-btn" class="back-btn detail-action-pill" type="button" title="Compartilhar link direto deste projeto">🔗 COMPARTILHAR</button>
-          <img class="site-logo detail-logo-hide-sm" src="/images/logo.png" alt="Level Construtora" decoding="async" onerror="this.style.display='none'" onload="this.style.display='block'">
+          <button id="detail-fav-btn" class="back-btn detail-action-pill detail-icon-btn" type="button" title="Salvar para comparar" aria-label="Favoritar projeto">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+          </button>
+          <button id="detail-share-btn" class="back-btn detail-action-pill detail-icon-btn" type="button" title="Compartilhar link direto deste projeto" aria-label="Compartilhar projeto">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </button>
+          <img class="site-logo detail-logo-hide-sm" src="/images/logo.png" alt="Level Construtora" decoding="async" onerror="this.style.display='none'">
         </div>
       </div>
 
@@ -474,10 +490,15 @@
             <div class="detail-bottom-cta-text">
               <span class="modal-eyebrow">GOSTOU DESTA PLANTA?</span>
               <h3>Construa ou personalize este projeto com a Level Construtora</h3>
-              <p>Nossa equipe de arquitetura e engenharia em Maringá ajusta cada ambiente ao seu terreno, estilo de vida e orçamento — do projeto executivo à entrega das chaves.</p>
+              <p>Nossa equipe de Arquitetura e Engenharia ajusta cada ambiente ao seu terreno, estilo de vida e orçamento - Do projeto executivo à entrega das chaves.</p>
             </div>
             <div class="detail-bottom-cta-actions">
               <a id="detail-bottom-whatsapp-btn" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 0;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+                  <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+                </svg>
                 Falar com Engenheiro / Arquiteto Agora
               </a>
               <button type="button" id="detail-open-simulator-btn" class="back-btn">

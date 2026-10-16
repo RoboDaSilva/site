@@ -843,7 +843,8 @@ const updateFavoritesUI = () => {
   if (activeCard && detailFavBtn) {
     const isFav = favs.includes(String(activeCard.userData.id));
     detailFavBtn.classList.toggle('is-favorited', isFav);
-    detailFavBtn.innerText = isFav ? '★ FAVORITADO' : '♡ FAVORITAR';
+    detailFavBtn.title = isFav ? 'Remover dos favoritos' : 'Salvar para comparar';
+    detailFavBtn.setAttribute('aria-label', isFav ? 'Remover dos favoritos' : 'Favoritar projeto');
   }
 };
 
@@ -1493,42 +1494,6 @@ const renderSimulatorResults = () => {
     `;
   }
 
-  // Encontra projetos compatíveis no portfólio
-  let matches = allProjects.filter(p => {
-    if (!simState.houseType || simState.houseType === 'Indiferente') return true;
-    return (p.houseType || '').toLowerCase() === simState.houseType.toLowerCase();
-  });
-
-  if (matches.length === 0) matches = allProjects.slice(0, 3);
-  else matches = matches.slice(0, 3);
-
-  if (simRecommendationsList) {
-    simRecommendationsList.innerHTML = '';
-    if (matches.length === 0) {
-      simRecommendationsList.innerHTML = '<p style="font-size:0.82rem; color:#999;">Criaremos um estudo exclusivo sob medida para o seu perfil.</p>';
-    } else {
-      matches.forEach(proj => {
-        const thumb = (proj.facades && proj.facades[0]) ? proj.facades[0] : (proj.facade || '');
-        const itemBtn = document.createElement('button');
-        itemBtn.type = 'button';
-        itemBtn.className = 'sim-rec-item';
-        itemBtn.innerHTML = `
-          ${thumb ? `<img src="${thumb}" alt="${proj.title}" />` : ''}
-          <div class="sim-rec-info">
-            <strong>${proj.title || 'Projeto Level'}</strong>
-            <span>${[proj.houseType, proj.lotSize ? `Lote ${proj.lotSize}` : '', proj.area].filter(Boolean).join(' • ')}</span>
-          </div>
-        `;
-        itemBtn.addEventListener('click', () => {
-          closeSimulator();
-          const targetCard = cards.find(c => String(c.userData.id) === String(proj.id));
-          if (targetCard) openDetail(targetCard);
-        });
-        simRecommendationsList.appendChild(itemBtn);
-      });
-    }
-  }
-
   if (simWhatsappCta) {
     const briefingMsg = [
       'Olá! Fiz a simulação de obra no site da Level Construtora e gostaria de conversar com um especialista:',
@@ -1656,7 +1621,7 @@ const initApp = async () => {
         if (data.hasLogo === false) {
           img.style.display = 'none';
         } else {
-          img.style.display = 'block';
+          img.style.display = '';
           img.src = `/images/logo.png?t=${data.logoUpdatedAt || cacheBuster}`;
         }
       });
