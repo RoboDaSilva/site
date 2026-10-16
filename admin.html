@@ -4,11 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin - Level Construtora</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/images/logo.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./style.css">
     <style>
-      body { overflow: auto; padding: 2rem 1rem; background: #050505; color: #fff; font-family: 'Inter', sans-serif; }
-      .admin-container { max-width: 860px; margin: 0 auto; display: none; }
+      body { overflow: auto; padding: 2rem 1rem; background: #050505; color: #fff; font-family: 'Inter', sans-serif; height: auto; min-height: 100dvh; }
+      .admin-container { max-width: 900px; margin: 0 auto; display: none; }
       .login-container { max-width: 400px; margin: 100px auto; text-align: center; }
       .panel { background: rgba(20,20,20,0.85); padding: 2rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem; backdrop-filter: blur(10px); }
       h1, h2 { color: white; margin-bottom: 1.5rem; }
@@ -40,14 +41,11 @@
       .action-btn.edit-btn { background: #2563eb; border-color: #2563eb; }
       .action-btn.delete-btn { background: #dc2626; border-color: #dc2626; }
       .edit-banner { display: none; background: rgba(37, 99, 235, 0.18); border: 1px solid #3b82f6; color: #93c5fd; padding: 0.85rem 1rem; border-radius: 0.5rem; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; }
+      .edit-file-hint { display: none; font-size: 0.78rem; color: #e5c158; margin-top: 0.35rem; }
+      .center-badge { background: rgba(229, 193, 88, 0.2); border: 1px solid rgba(229, 193, 88, 0.5); color: #f8e3a1; padding: 0.15rem 0.55rem; border-radius: 0.3rem; font-size: 0.72rem; font-weight: 600; }
     </style>
   </head>
   <body>
-    <!-- Google Tag Manager (noscript) -->
-    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KC9XCC4Q"
-    height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-    <!-- End Google Tag Manager (noscript) -->
-
     <div id="login-screen" class="login-container panel">
       <h2>Acesso Restrito</h2>
       <form id="login-form">
@@ -62,7 +60,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
         <h1 style="margin: 0;">Painel de Administração</h1>
         <div style="display: flex; gap: 0.75rem;">
-          <a href="/" target="_blank" class="back-btn" style="text-decoration: none; display: inline-flex; align-items: center;">Ver Site</a>
+          <a href="/" target="_blank" class="back-btn" style="text-decoration: none; display: inline-flex; align-items: center;">Ver Site 3D</a>
           <button id="logout-btn" class="back-btn">Sair</button>
         </div>
       </div>
@@ -150,24 +148,33 @@
 
           <div class="form-row">
             <div class="form-group" style="margin-bottom: 0;">
-              <label>Imagens da Fachada / 3D (Até 5) *</label>
+              <label>Imagens da Fachada / 3D (Até 10) *</label>
               <input type="file" id="form-facade" accept="image/*" multiple required />
+              <span id="facade-edit-hint" class="edit-file-hint">Deixe em branco para manter as fachadas atuais</span>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label>Imagens da Planta Humanizada (Até 3) *</label>
+              <label>Imagens da Planta Humanizada (Até 10) *</label>
               <input type="file" id="form-plan" accept="image/*" multiple required />
+              <span id="plan-edit-hint" class="edit-file-hint">Deixe em branco para manter as plantas atuais</span>
             </div>
           </div>
 
-          <button type="submit" class="submit-btn" id="submit-admin-btn" style="margin-top: 1.5rem;">Cadastrar Projeto</button>
+          <p style="font-size: 0.78rem; color: #888; margin-top: 0.75rem;">
+            ⚡ Otimização Automática WebP Ativa: Suas imagens 4K são otimizadas automaticamente no envio para máxima fluidez 60fps na Galeria 3D.
+          </p>
+
+          <button type="submit" class="submit-btn" id="submit-admin-btn" style="margin-top: 1.25rem;">Cadastrar Projeto</button>
         </form>
       </div>
 
       <div class="panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
-          <h2 style="margin: 0;">Projetos Cadastrados</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h2 style="margin: 0;">Projetos Cadastrados & Ordem na Galeria 3D</h2>
           <span id="projects-count-badge" style="color: #aaa; font-size: 0.85rem;">0 projetos</span>
         </div>
+        <p style="font-size: 0.82rem; color: #999; margin-bottom: 1.25rem;">
+          O <strong>1º projeto da lista</strong> é ancorado automaticamente no centro exato da câmera (X=0, Y=0) quando o cliente abre o site.
+        </p>
         <div id="projects-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
           <p style="color: #888;">Carregando projetos...</p>
         </div>

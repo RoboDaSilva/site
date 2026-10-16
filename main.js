@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import gsap from 'gsap';
 
 /* ==========================================================================
-   1. UTILITIES: DEBOUNCE, THROTTLE & RESPONSIVE VIEWPORT METRICS
+   1. UTILITIES: DEBOUNCE, THROTTLE, TOAST & RESPONSIVE VIEWPORT METRICS
    ========================================================================== */
 const debounce = (fn, delay = 150) => {
   let timer = null;
@@ -23,6 +23,18 @@ const throttle = (fn, limit = 80) => {
       }, limit);
     }
   };
+};
+
+const toastEl = document.getElementById('ui-toast');
+let toastTimer = null;
+const showToast = (msg, duration = 2600) => {
+  if (!toastEl) return;
+  toastEl.innerText = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.remove('show');
+  }, duration);
 };
 
 // Calcula o FOV ideal (zoom = 1) com base na proporção da tela (Mobile-First)
@@ -61,17 +73,37 @@ const galleryGroup = new THREE.Group();
 scene.add(galleryGroup);
 
 const textureLoader = new THREE.TextureLoader();
+const textureCache = new Map();
 const maxAnisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4);
 const loaderEl = document.getElementById('loader');
+const gestureHintEl = document.getElementById('gesture-hint');
+let gestureHintDismissed = false;
+
+const dismissGestureHint = () => {
+  if (gestureHintDismissed || !gestureHintEl) return;
+  gestureHintDismissed = true;
+  gsap.to(gestureHintEl, {
+    autoAlpha: 0,
+    y: 8,
+    duration: 0.4,
+    ease: 'power2.out',
+    onComplete: () => {
+      gestureHintEl.style.display = 'none';
+    }
+  });
+};
 
 // Geometrias compartilhadas (evita realocação na GPU e vazamento de memória)
 const cardGeometry = new THREE.PlaneGeometry(5.4, 4.5);
-const textPlaneGeometry = new THREE.PlaneGeometry(4.4, 1.1);
+const textPlaneGeometry = new THREE.PlaneGeometry(4.9, 1.35);
 
 let cards = [];
+let filteredGalleryItems = [];
 let radius = 12;
 let allProjects = [];
 let siteSettings = {};
+let galleryBuildId = 0;
+let hoveredCard = null;
 
 // Instâncias reutilizáveis para evitar Garbage Collection no loop de eventos
 const pointerVec = new THREE.Vector2();
@@ -105,10 +137,8 @@ const focusCameraAt = ({ x = 0, y = 0, zoom = 1, duration = 1.15, pauseAutoRotat
   currentZoom = Math.max(0.6, Math.min(2.0, zoom));
   targetFov = THREE.MathUtils.clamp(baseFov / currentZoom, 32, 95);
 
-  // Pausa a rotação automática temporariamente para garantir leitura imediata no centro
   autoRotatePauseUntil = performance.now() + pauseAutoRotateMs;
 
-  // Normaliza o caminho angular mais curto no eixo Y para evitar giros bruscos de 360°
   const twoPi = Math.PI * 2;
   const deltaY = ((y - currentRotation.y + Math.PI) % twoPi + twoPi) % twoPi - Math.PI;
   const shortestTargetY = currentRotation.y + deltaY;
@@ -149,12 +179,26 @@ const focusCameraAt = ({ x = 0, y = 0, zoom = 1, duration = 1.15, pauseAutoRotat
 };
 
 /* ==========================================================================
-   4. ANALYTICS & DATA HELPERS
+   4. ANALYTICS, WHATSAPP HELPER & DATA UNPACKING
    ========================================================================== */
 const trackEvent = (eventName, params = {}) => {
   if (typeof window.gtag === 'function') {
     window.gtag('event', eventName, params);
   }
+};
+
+const getCleanWhatsappPhone = () => {
+  let basePhone = '5544998641000';
+  if (siteSettings && siteSettings.whatsapp) {
+    const phoneMatch = String(siteSettings.whatsapp).match(/(\d{10,15})/);
+    if (phoneMatch) basePhone = phoneMatch[1];
+  }
+  return basePhone;
+};
+
+const buildWhatsappUrl = (message) => {
+  const phone = getCleanWhatsappPhone();
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 };
 
 const getYoutubeEmbedUrl = (url) => {
@@ -202,13 +246,14 @@ const mergeProjectMeta = (projects, settings) => {
 };
 
 /* ==========================================================================
-   5. GALLERY BUILDER WITH ANCHORED SPHERICAL COORDINATES
+   5. GALLERY BUILDER WITH CACHED TEXTURES & 2-LINE 3D LABELS
    ========================================================================== */
 const clearGallery = () => {
+  hoveredCard = null;
   while (galleryGroup.children.length > 0) {
     const child = galleryGroup.children[0];
     if (child.material) {
-      if (child.material.map) child.material.map.dispose();
+      // Não descartamos texturas de imagem que estão no textureCache para troca instantânea de filtros
       child.material.dispose();
     }
     child.children.forEach(subchild => {
@@ -234,8 +279,6 @@ const computeCardSphericalCoords = (index, count) => {
     };
   }
 
-  // Ancora o primeiro projeto (index === 0) no slot central da espiral (k = 0 -> phi = PI/2, theta = PI)
-  // e distribui os demais projetos nos slots restantes sem colisão espacial.
   const mid = Math.floor((count - 1) / 2);
   const slot = index === 0 ? mid : (index <= mid ? index - 1 : index);
   const k = slot - mid;
@@ -250,17 +293,81 @@ const computeCardSphericalCoords = (index, count) => {
   return { phi, theta };
 };
 
-const buildGallery = (projects, { resetCamera = true } = {}) => {
+const createCardLabelMesh = (item) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 176;
+  const ctx = canvas.getContext('2d');
+
+  // Linha 1: Título do Projeto
+  const titleText = (item.title || 'Projeto Level').slice(0, 32);
+  ctx.font = '600 34px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(titleText, 320, 62);
+
+  // Linha 2: Tipologia • Medida de Lote • Área
+  const subParts = [
+    item.houseType || null,
+    item.lotSize ? `Lote ${item.lotSize}` : null,
+    item.area || null
+  ].filter(Boolean);
+
+  if (subParts.length > 0) {
+    ctx.font = '400 25px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(229, 193, 88, 0.92)';
+    ctx.fillText(subParts.join(' • '), 320, 118);
+  }
+
+  const textTexture = new THREE.CanvasTexture(canvas);
+  textTexture.minFilter = THREE.LinearFilter;
+
+  const textMaterial = new THREE.MeshBasicMaterial({
+    map: textTexture,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false
+  });
+
+  const textPlane = new THREE.Mesh(textPlaneGeometry, textMaterial);
+  textPlane.position.y = -2.92;
+  return { textPlane, textMaterial };
+};
+
+const loadCachedTexture = (url, onLoad, onError) => {
+  if (textureCache.has(url)) {
+    onLoad(textureCache.get(url));
+    return;
+  }
+  textureLoader.load(
+    url,
+    (texture) => {
+      texture.anisotropy = maxAnisotropy;
+      texture.generateMipmaps = true;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      textureCache.set(url, texture);
+      onLoad(texture);
+    },
+    undefined,
+    onError
+  );
+};
+
+const buildGallery = (projects, { resetCamera = true, onReady = null } = {}) => {
+  const currentBuildId = ++galleryBuildId;
   clearGallery();
 
   const galleryItems = (projects || []).filter(p => {
     const facadePath = p.facades ? p.facades[0] : p.facade;
     return Boolean(facadePath);
   });
+  filteredGalleryItems = galleryItems;
 
   if (galleryItems.length === 0) {
     if (loaderEl) {
-      loaderEl.innerText = 'Nenhum projeto encontrado';
+      loaderEl.innerText = 'Nenhum projeto encontrado para este filtro';
       loaderEl.style.display = 'block';
       gsap.to(loaderEl, { opacity: 1, duration: 0.25 });
     }
@@ -275,6 +382,8 @@ const buildGallery = (projects, { resetCamera = true } = {}) => {
   }
 
   let firstLoaded = false;
+  let loadedCount = 0;
+
   if (loaderEl) {
     loaderEl.innerText = 'Carregando Galeria...';
     loaderEl.style.display = 'block';
@@ -282,34 +391,36 @@ const buildGallery = (projects, { resetCamera = true } = {}) => {
   }
 
   const hideLoaderOnceReady = () => {
-    if (firstLoaded || !loaderEl) return;
-    firstLoaded = true;
-    gsap.to(loaderEl, {
-      opacity: 0,
-      duration: 0.35,
-      onComplete: () => {
-        loaderEl.style.display = 'none';
-      }
-    });
+    if (currentBuildId !== galleryBuildId) return;
+    loadedCount++;
+    if (!firstLoaded && loaderEl) {
+      firstLoaded = true;
+      gsap.to(loaderEl, {
+        opacity: 0,
+        duration: 0.35,
+        onComplete: () => {
+          loaderEl.style.display = 'none';
+        }
+      });
+    }
+    if (loadedCount === count && typeof onReady === 'function') {
+      onReady();
+    }
   };
 
   galleryItems.forEach((item, index) => {
     const imgUrl = item.facades ? item.facades[0] : item.facade;
     const { phi, theta } = computeCardSphericalCoords(index, count);
 
-    // Coordenadas angulares exatas (X, Y) para focar este card diretamente no centro da viewport
     const anchorCoords = {
       x: phi - Math.PI / 2,
       y: Math.PI - theta
     };
 
-    textureLoader.load(
+    loadCachedTexture(
       imgUrl,
       (texture) => {
-        texture.anisotropy = maxAnisotropy;
-        texture.generateMipmaps = true;
-        texture.minFilter = THREE.LinearMipmapLinearFilter;
-        texture.magFilter = THREE.LinearFilter;
+        if (currentBuildId !== galleryBuildId) return;
 
         const material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -324,32 +435,8 @@ const buildGallery = (projects, { resetCamera = true } = {}) => {
           anchorCoords
         };
 
-        let textMaterial = null;
-        if (item.lotSize) {
-          const canvas = document.createElement('canvas');
-          canvas.width = 512;
-          canvas.height = 128;
-          const context = canvas.getContext('2d');
-          context.font = '400 34px Inter, sans-serif';
-          context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          context.textAlign = 'center';
-          context.textBaseline = 'middle';
-          const labelText = item.area ? `Lote: ${item.lotSize} • ${item.area}` : `Lote: ${item.lotSize}`;
-          context.fillText(labelText, 256, 64);
-
-          const textTexture = new THREE.CanvasTexture(canvas);
-          textTexture.minFilter = THREE.LinearFilter;
-
-          textMaterial = new THREE.MeshBasicMaterial({
-            map: textTexture,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false
-          });
-          const textPlane = new THREE.Mesh(textPlaneGeometry, textMaterial);
-          textPlane.position.y = -2.8;
-          card.add(textPlane);
-        }
+        const { textPlane, textMaterial } = createCardLabelMesh(item);
+        card.add(textPlane);
 
         card.position.setFromSphericalCoords(radius, phi, theta);
         card.lookAt(0, 0, 0);
@@ -357,13 +444,12 @@ const buildGallery = (projects, { resetCamera = true } = {}) => {
         galleryGroup.add(card);
         cards.push(card);
 
-        const delay = Math.min(index * 0.06, 0.35);
-        gsap.to(material, { opacity: 1, duration: 0.75, delay });
-        if (textMaterial) gsap.to(textMaterial, { opacity: 1, duration: 0.75, delay });
+        const delay = Math.min(index * 0.05, 0.3);
+        gsap.to(material, { opacity: 1, duration: 0.65, delay });
+        gsap.to(textMaterial, { opacity: 1, duration: 0.65, delay });
 
         hideLoaderOnceReady();
       },
-      undefined,
       () => {
         hideLoaderOnceReady();
       }
@@ -372,7 +458,7 @@ const buildGallery = (projects, { resetCamera = true } = {}) => {
 };
 
 /* ==========================================================================
-   6. POINTER, WHEEL & TOUCH INTERACTION (MOBILE-FIRST & THROTTLED)
+   6. POINTER, WHEEL, HOVER MICRO-INTERACTION & TOUCH (MOBILE-FIRST)
    ========================================================================== */
 const detailOverlay = document.getElementById('detail-overlay');
 const detailTitle = document.getElementById('detail-title');
@@ -380,15 +466,32 @@ const detailSubtitle = document.getElementById('detail-subtitle');
 const detailSpecs = document.getElementById('detail-specs');
 const detailDesc = document.getElementById('detail-desc');
 const detailWhatsappBtn = document.getElementById('detail-whatsapp-btn');
+const detailAdaptBtn = document.getElementById('detail-adapt-btn');
+const detailBottomWhatsappBtn = document.getElementById('detail-bottom-whatsapp-btn');
+const detailOpenSimulatorBtn = document.getElementById('detail-open-simulator-btn');
 const detailVideoWrapper = document.getElementById('detail-video-wrapper');
 const detailFacadesContainer = document.getElementById('detail-facades-container');
+const detailPlansSection = document.getElementById('detail-plans-section');
 const detailPlansContainer = document.getElementById('detail-plans-container');
+const detailFavBtn = document.getElementById('detail-fav-btn');
+const detailShareBtn = document.getElementById('detail-share-btn');
+const prevProjectBtn = document.getElementById('prev-project-btn');
+const nextProjectBtn = document.getElementById('next-project-btn');
+const prevProjectTitle = document.getElementById('prev-project-title');
+const nextProjectTitle = document.getElementById('next-project-title');
+const detailStickyBar = document.getElementById('detail-sticky-bar');
+const stickyBarTitle = document.getElementById('sticky-bar-title');
+const stickyBarLot = document.getElementById('sticky-bar-lot');
+const stickyBarWhatsapp = document.getElementById('sticky-bar-whatsapp');
 const backBtn = document.getElementById('back-btn');
 
 const isUIElement = (target) => {
   if (!target || typeof target.closest !== 'function') return false;
   return Boolean(
     target.closest('#search-overlay') ||
+    target.closest('#simulator-overlay') ||
+    target.closest('#compare-overlay') ||
+    target.closest('#lightbox-overlay') ||
     target.closest('.admin-overlay') ||
     target.closest('.header') ||
     target.closest('.social-footer') ||
@@ -404,7 +507,18 @@ const getCardFromIntersection = (intersectObj) => {
   return obj;
 };
 
-// Hover raycast otimizado com throttle (não roda durante drag nem bloqueia 60fps)
+const setHoveredCard = (card) => {
+  if (hoveredCard === card) return;
+  if (hoveredCard) {
+    gsap.to(hoveredCard.scale, { x: 1, y: 1, z: 1, duration: 0.28, ease: 'power2.out' });
+  }
+  hoveredCard = card;
+  if (hoveredCard) {
+    gsap.to(hoveredCard.scale, { x: 1.06, y: 1.06, z: 1.06, duration: 0.28, ease: 'power2.out' });
+  }
+};
+
+// Hover raycast otimizado com throttle + micro-interação 3D nos cards
 const updateHoverCursor = throttle((clientX, clientY) => {
   if (isDetailView || isDragging || cards.length === 0) return;
   pointerVec.set(
@@ -413,10 +527,16 @@ const updateHoverCursor = throttle((clientX, clientY) => {
   );
   raycaster.setFromCamera(pointerVec, camera);
   const intersects = raycaster.intersectObjects(cards, false);
-  document.body.style.cursor = intersects.length > 0 ? 'pointer' : 'grab';
-}, 90);
+  if (intersects.length > 0) {
+    const hitCard = getCardFromIntersection(intersects[0].object);
+    setHoveredCard(hitCard);
+    document.body.style.cursor = 'pointer';
+  } else {
+    setHoveredCard(null);
+    document.body.style.cursor = 'grab';
+  }
+}, 85);
 
-// Suporte a Pinch-to-Zoom suave no Mobile
 const activePointers = new Map();
 let initialPinchDistance = null;
 let initialPinchFov = baseFov;
@@ -430,6 +550,7 @@ const getPinchDistance = () => {
 const onPointerDown = (e) => {
   if (isDetailView || isUIElement(e.target)) return;
 
+  dismissGestureHint();
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
   if (activePointers.size === 2) {
@@ -456,7 +577,6 @@ const onPointerMove = (e) => {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   }
 
-  // Pinch-to-zoom com 2 dedos no mobile
   if (activePointers.size === 2 && initialPinchDistance > 0) {
     const currentDist = getPinchDistance();
     const scale = initialPinchDistance / Math.max(20, currentDist);
@@ -540,6 +660,7 @@ const onPointerCancel = (e) => {
 
 window.addEventListener('wheel', (e) => {
   if (isDetailView || isUIElement(e.target)) return;
+  dismissGestureHint();
   targetFov = THREE.MathUtils.clamp(targetFov + e.deltaY * 0.04, 32, 92);
 }, { passive: true });
 
@@ -550,18 +671,269 @@ window.addEventListener('pointercancel', onPointerCancel, { passive: true });
 window.addEventListener('pointerleave', onPointerCancel, { passive: true });
 
 /* ==========================================================================
-   7. PROJECT DETAIL OVERLAY
+   7. FULLSCREEN LIGHTBOX CONTROLLER (ZOOM & PAN FOR FLOOR PLANS)
    ========================================================================== */
-const openDetail = (card) => {
-  if (isDetailView) return;
-  isDetailView = true;
-  history.pushState({ view: 'detail' }, '', '#projeto');
+const lightboxOverlay = document.getElementById('lightbox-overlay');
+const lightboxImg = document.getElementById('lightbox-img');
+const lightboxCaption = document.getElementById('lightbox-caption');
+const lightboxZoomBtn = document.getElementById('lightbox-zoom-btn');
+const lightboxCloseBtn = document.getElementById('lightbox-close-btn');
+const lightboxPrevBtn = document.getElementById('lightbox-prev-btn');
+const lightboxNextBtn = document.getElementById('lightbox-next-btn');
+const lightboxStage = document.getElementById('lightbox-stage');
+
+let lightboxItems = [];
+let lightboxIndex = 0;
+let isLightboxZoomed = false;
+let lbPan = { x: 0, y: 0 };
+let lbDragStart = null;
+
+const applyLightboxTransform = () => {
+  if (!lightboxImg) return;
+  const scale = isLightboxZoomed ? 2.25 : 1;
+  lightboxImg.style.transform = `translate(${lbPan.x}px, ${lbPan.y}px) scale(${scale})`;
+  lightboxImg.classList.toggle('zoomed', isLightboxZoomed);
+  if (lightboxZoomBtn) {
+    lightboxZoomBtn.innerText = isLightboxZoomed ? '🔍 Zoom -' : '🔍 Zoom +';
+  }
+};
+
+const resetLightboxZoom = () => {
+  isLightboxZoomed = false;
+  lbPan = { x: 0, y: 0 };
+  applyLightboxTransform();
+};
+
+const renderLightboxSlide = () => {
+  if (!lightboxItems.length || !lightboxImg) return;
+  const item = lightboxItems[lightboxIndex];
+  resetLightboxZoom();
+  lightboxImg.src = item.src;
+  lightboxImg.alt = item.caption || 'Imagem ampliada';
+  if (lightboxCaption) {
+    lightboxCaption.innerText = `${item.caption} (${lightboxIndex + 1}/${lightboxItems.length})`;
+  }
+};
+
+const openLightbox = (items, startIndex = 0) => {
+  if (!lightboxOverlay || !items || !items.length) return;
+  lightboxItems = items;
+  lightboxIndex = startIndex;
+  renderLightboxSlide();
+  lightboxOverlay.classList.add('active');
+  trackEvent('abrir_lightbox_imagem', {
+    legenda: items[startIndex]?.caption || ''
+  });
+};
+
+const closeLightbox = () => {
+  if (!lightboxOverlay) return;
+  lightboxOverlay.classList.remove('active');
+  resetLightboxZoom();
+};
+
+if (lightboxCloseBtn) lightboxCloseBtn.addEventListener('click', closeLightbox);
+if (lightboxZoomBtn) {
+  lightboxZoomBtn.addEventListener('click', () => {
+    isLightboxZoomed = !isLightboxZoomed;
+    if (!isLightboxZoomed) lbPan = { x: 0, y: 0 };
+    applyLightboxTransform();
+  });
+}
+if (lightboxPrevBtn) {
+  lightboxPrevBtn.addEventListener('click', () => {
+    if (!lightboxItems.length) return;
+    lightboxIndex = (lightboxIndex - 1 + lightboxItems.length) % lightboxItems.length;
+    renderLightboxSlide();
+  });
+}
+if (lightboxNextBtn) {
+  lightboxNextBtn.addEventListener('click', () => {
+    if (!lightboxItems.length) return;
+    lightboxIndex = (lightboxIndex + 1) % lightboxItems.length;
+    renderLightboxSlide();
+  });
+}
+if (lightboxStage && lightboxImg) {
+  lightboxImg.addEventListener('dblclick', () => {
+    isLightboxZoomed = !isLightboxZoomed;
+    if (!isLightboxZoomed) lbPan = { x: 0, y: 0 };
+    applyLightboxTransform();
+  });
+
+  lightboxStage.addEventListener('pointerdown', (e) => {
+    if (e.target === lightboxStage && !isLightboxZoomed) {
+      closeLightbox();
+      return;
+    }
+    if (!isLightboxZoomed) return;
+    lbDragStart = { x: e.clientX - lbPan.x, y: e.clientY - lbPan.y };
+  });
+
+  lightboxStage.addEventListener('pointermove', (e) => {
+    if (!isLightboxZoomed || !lbDragStart) return;
+    lbPan.x = THREE.MathUtils.clamp(e.clientX - lbDragStart.x, -480, 480);
+    lbPan.y = THREE.MathUtils.clamp(e.clientY - lbDragStart.y, -380, 380);
+    applyLightboxTransform();
+  });
+
+  const endLbDrag = () => { lbDragStart = null; };
+  lightboxStage.addEventListener('pointerup', endLbDrag);
+  lightboxStage.addEventListener('pointercancel', endLbDrag);
+}
+
+/* ==========================================================================
+   8. FAVORITES & SIDE-BY-SIDE PROJECT COMPARATOR
+   ========================================================================== */
+const FAVORITES_KEY = 'level_favorited_projects_v2';
+const openCompareBtn = document.getElementById('open-compare-btn');
+const compareOverlay = document.getElementById('compare-overlay');
+const closeCompareBtn = document.getElementById('close-compare-btn');
+const clearCompareBtn = document.getElementById('clear-compare-btn');
+const compareGridContainer = document.getElementById('compare-grid-container');
+const compareWhatsappCta = document.getElementById('compare-whatsapp-cta');
+
+const getFavoriteIds = () => {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveFavoriteIds = (ids) => {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+  } catch (e) {}
+  updateFavoritesUI();
+};
+
+const toggleFavoriteProject = (projectId) => {
+  const idStr = String(projectId);
+  let favs = getFavoriteIds();
+  if (favs.includes(idStr)) {
+    favs = favs.filter(id => id !== idStr);
+    showToast('Removido dos favoritos');
+  } else {
+    if (favs.length >= 4) {
+      favs.shift();
+    }
+    favs.push(idStr);
+    showToast('Projeto salvo para comparação! ⭐');
+    trackEvent('favoritar_projeto', { projeto_id: idStr });
+  }
+  saveFavoriteIds(favs);
+};
+
+const updateFavoritesUI = () => {
+  const favs = getFavoriteIds();
+  const validFavProjects = allProjects.filter(p => favs.includes(String(p.id)));
+
+  if (openCompareBtn) {
+    if (validFavProjects.length > 0) {
+      openCompareBtn.style.display = 'inline-flex';
+      openCompareBtn.innerText = `★ FAVORITOS (${validFavProjects.length})`;
+    } else {
+      openCompareBtn.style.display = 'none';
+    }
+  }
+
+  if (activeCard && detailFavBtn) {
+    const isFav = favs.includes(String(activeCard.userData.id));
+    detailFavBtn.classList.toggle('is-favorited', isFav);
+    detailFavBtn.innerText = isFav ? '★ FAVORITADO' : '♡ FAVORITAR';
+  }
+};
+
+const renderCompareModal = () => {
+  if (!compareGridContainer) return;
+  const favs = getFavoriteIds();
+  const favProjects = allProjects.filter(p => favs.includes(String(p.id)));
+  compareGridContainer.innerHTML = '';
+
+  if (favProjects.length === 0) {
+    compareGridContainer.innerHTML = '<p style="color:#999; padding: 1.5rem 0;">Você ainda não favoritou nenhum projeto. Abra um projeto na galeria e clique em "♡ Favoritar" para comparar lado a lado.</p>';
+    return;
+  }
+
+  favProjects.forEach(proj => {
+    const thumb = (proj.facades && proj.facades[0]) ? proj.facades[0] : (proj.facade || '');
+    const cardEl = document.createElement('div');
+    cardEl.className = 'compare-card';
+    cardEl.innerHTML = `
+      ${thumb ? `<img src="${thumb}" alt="${proj.title}" loading="lazy" />` : ''}
+      <h3>${proj.title || 'Projeto'}</h3>
+      <ul class="compare-specs-list">
+        <li><strong>Tipologia:</strong> ${proj.houseType || 'Residencial'}</li>
+        <li><strong>Lote Ideal:</strong> ${proj.lotSize || 'Sob consulta'}</li>
+        <li><strong>Área:</strong> ${proj.area || 'Sob consulta'}</li>
+        <li><strong>Quartos:</strong> ${proj.bedrooms || '-'}</li>
+        <li><strong>Garagem:</strong> ${proj.garage || '-'}</li>
+      </ul>
+      <div class="compare-card-actions">
+        <button type="button" class="submit-btn view-fav-btn" style="padding: 0.55rem 0.75rem; font-size: 0.76rem;">Ver Planta</button>
+        <button type="button" class="sim-prev-btn remove-fav-btn" title="Remover">✕</button>
+      </div>
+    `;
+
+    cardEl.querySelector('.view-fav-btn').addEventListener('click', () => {
+      compareOverlay.classList.remove('active');
+      const targetCard = cards.find(c => String(c.userData.id) === String(proj.id));
+      if (targetCard) {
+        openDetail(targetCard);
+      }
+    });
+
+    cardEl.querySelector('.remove-fav-btn').addEventListener('click', () => {
+      toggleFavoriteProject(proj.id);
+      renderCompareModal();
+    });
+
+    compareGridContainer.appendChild(cardEl);
+  });
+
+  if (compareWhatsappCta) {
+    const titles = favProjects.map(p => `${p.title} (${p.lotSize || ''})`).join(', ');
+    const msg = `Olá! Selecionei estes projetos favoritos no site da Level Construtora: ${titles}. Gostaria de comparar a viabilidade e valores.`;
+    compareWhatsappCta.href = buildWhatsappUrl(msg);
+  }
+};
+
+if (openCompareBtn && compareOverlay) {
+  openCompareBtn.addEventListener('click', () => {
+    renderCompareModal();
+    compareOverlay.classList.add('active');
+  });
+}
+if (closeCompareBtn && compareOverlay) {
+  closeCompareBtn.addEventListener('click', () => compareOverlay.classList.remove('active'));
+}
+if (clearCompareBtn) {
+  clearCompareBtn.addEventListener('click', () => {
+    saveFavoriteIds([]);
+    renderCompareModal();
+  });
+}
+if (compareOverlay) {
+  compareOverlay.addEventListener('click', (e) => {
+    if (e.target === compareOverlay) compareOverlay.classList.remove('active');
+  });
+}
+
+/* ==========================================================================
+   9. PROJECT DETAIL OVERLAY, DEEP LINKING & SEQUENTIAL NAVIGATION
+   ========================================================================== */
+const populateDetailContent = (card) => {
   activeCard = card;
   const data = card.userData;
 
   trackEvent('visualizar_projeto', {
+    projeto_id: String(data.id || ''),
     projeto_titulo: data.title || 'Projeto',
-    projeto_lote: data.lotSize || ''
+    projeto_lote: data.lotSize || '',
+    projeto_tipo: data.houseType || ''
   });
 
   detailTitle.innerText = data.title || '';
@@ -587,20 +959,40 @@ const openDetail = (card) => {
   });
   detailSpecs.appendChild(specsFragment);
 
+  // CTAs de WhatsApp Contextualizados
+  const primaryMsg = `Olá! Vi o projeto "${data.title || ''}" (${data.lotSize ? `Lote ${data.lotSize}` : ''}) no site da Level Construtora e gostaria de mais informações e orçamento.`;
+  const adaptMsg = `Olá! Gostei muito do projeto "${data.title || ''}" no site da Level Construtora, mas gostaria de adaptar a planta para a medida do meu terreno.`;
+  const primaryWaUrl = buildWhatsappUrl(primaryMsg);
+  const adaptWaUrl = buildWhatsappUrl(adaptMsg);
+
   if (detailWhatsappBtn) {
-    let basePhone = '5544998641000';
-    if (siteSettings.whatsapp) {
-      const phoneMatch = siteSettings.whatsapp.match(/(\d{10,15})/);
-      if (phoneMatch) basePhone = phoneMatch[1];
-    }
-    const msg = `Olá! Vi o projeto "${data.title || ''}" (${data.lotSize ? `Lote ${data.lotSize}` : ''}) no site da Level Construtora e gostaria de mais informações.`;
-    detailWhatsappBtn.href = `https://wa.me/${basePhone}?text=${encodeURIComponent(msg)}`;
+    detailWhatsappBtn.href = primaryWaUrl;
     detailWhatsappBtn.onclick = () => {
-      trackEvent('clique_whatsapp_projeto', {
-        projeto_titulo: data.title || 'Projeto'
-      });
+      trackEvent('clique_whatsapp_projeto', { projeto_titulo: data.title || 'Projeto', posicao: 'topo' });
     };
   }
+  if (detailBottomWhatsappBtn) {
+    detailBottomWhatsappBtn.href = primaryWaUrl;
+    detailBottomWhatsappBtn.onclick = () => {
+      trackEvent('clique_whatsapp_projeto', { projeto_titulo: data.title || 'Projeto', posicao: 'rodape_planta' });
+    };
+  }
+  if (detailAdaptBtn) {
+    detailAdaptBtn.href = adaptWaUrl;
+    detailAdaptBtn.onclick = () => {
+      trackEvent('clique_adaptar_planta', { projeto_titulo: data.title || 'Projeto' });
+    };
+  }
+  if (stickyBarTitle) stickyBarTitle.innerText = data.title || 'Projeto';
+  if (stickyBarLot) stickyBarLot.innerText = [data.houseType, data.lotSize ? `Lote ${data.lotSize}` : ''].filter(Boolean).join(' • ');
+  if (stickyBarWhatsapp) {
+    stickyBarWhatsapp.href = primaryWaUrl;
+    stickyBarWhatsapp.onclick = () => {
+      trackEvent('clique_whatsapp_projeto', { projeto_titulo: data.title || 'Projeto', posicao: 'sticky_mobile' });
+    };
+  }
+
+  updateFavoritesUI();
 
   if (detailVideoWrapper) {
     const embedUrl = getYoutubeEmbedUrl(data.videoUrl);
@@ -613,32 +1005,81 @@ const openDetail = (card) => {
     }
   }
 
-  detailFacadesContainer.innerHTML = '';
   const facadesArray = (data.facades || [data.facade]).filter(Boolean);
+  const plansArray = (data.plans || [data.plan]).filter(Boolean);
+
+  const allLightboxImages = [
+    ...facadesArray.map((src, i) => ({ src, caption: `${data.title || 'Projeto'} — Fachada ${i + 1}` })),
+    ...plansArray.map((src, i) => ({ src, caption: `${data.title || 'Projeto'} — Planta Humanizada ${i + 1}` }))
+  ];
+
+  detailFacadesContainer.innerHTML = '';
   const facadesFragment = document.createDocumentFragment();
   facadesArray.forEach((path, idx) => {
-    const img = document.createElement('img');
-    img.src = path;
-    img.alt = `${data.title || 'Projeto'} - Fachada ${idx + 1}`;
-    img.loading = idx === 0 ? 'eager' : 'lazy';
-    img.decoding = 'async';
-    facadesFragment.appendChild(img);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'zoomable-img-wrapper';
+    wrapper.innerHTML = `
+      <img src="${path}" alt="${data.title || 'Projeto'} - Fachada ${idx + 1}" loading="${idx === 0 ? 'eager' : 'lazy'}" decoding="async" />
+      <span class="zoom-badge-hint">🔍 Ampliar Perspectiva</span>
+    `;
+    wrapper.addEventListener('click', () => openLightbox(allLightboxImages, idx));
+    facadesFragment.appendChild(wrapper);
   });
   detailFacadesContainer.appendChild(facadesFragment);
 
   detailPlansContainer.innerHTML = '';
-  const plansArray = (data.plans || [data.plan]).filter(Boolean);
-  detailPlansContainer.style.display = plansArray.length > 0 ? 'flex' : 'none';
+  if (detailPlansSection) {
+    detailPlansSection.style.display = plansArray.length > 0 ? 'flex' : 'none';
+  }
   const plansFragment = document.createDocumentFragment();
   plansArray.forEach((path, idx) => {
-    const img = document.createElement('img');
-    img.src = path;
-    img.alt = `${data.title || 'Projeto'} - Planta ${idx + 1}`;
-    img.loading = 'lazy';
-    img.decoding = 'async';
-    plansFragment.appendChild(img);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'zoomable-img-wrapper';
+    wrapper.innerHTML = `
+      <img src="${path}" alt="${data.title || 'Projeto'} - Planta ${idx + 1}" loading="lazy" decoding="async" />
+      <span class="zoom-badge-hint">🔍 Dar Zoom na Planta</span>
+    `;
+    wrapper.addEventListener('click', () => openLightbox(allLightboxImages, facadesArray.length + idx));
+    plansFragment.appendChild(wrapper);
   });
   detailPlansContainer.appendChild(plansFragment);
+
+  // Configura botões Próximo / Anterior Projeto
+  if (cards.length > 1) {
+    const currentIndex = cards.indexOf(card);
+    const prevCard = cards[(currentIndex - 1 + cards.length) % cards.length];
+    const nextCard = cards[(currentIndex + 1) % cards.length];
+
+    if (prevProjectTitle) prevProjectTitle.innerText = prevCard.userData.title || 'Anterior';
+    if (nextProjectTitle) nextProjectTitle.innerText = nextCard.userData.title || 'Próximo';
+
+    if (prevProjectBtn) {
+      prevProjectBtn.onclick = () => {
+        populateDetailContent(prevCard);
+        detailOverlay.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    }
+    if (nextProjectBtn) {
+      nextProjectBtn.onclick = () => {
+        populateDetailContent(nextCard);
+        detailOverlay.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    }
+  }
+};
+
+const openDetail = (card) => {
+  if (!card) return;
+  setHoveredCard(null);
+  const data = card.userData;
+
+  if (!isDetailView) {
+    isDetailView = true;
+    const shareUrl = `${window.location.pathname}?projeto=${encodeURIComponent(data.id)}#projeto`;
+    history.pushState({ view: 'detail', projectId: data.id }, '', shareUrl);
+  }
+
+  populateDetailContent(card);
 
   card.getWorldPosition(tempWorldPos);
   const camTargetPos = tempWorldPos.clone().multiplyScalar(0.68);
@@ -647,7 +1088,7 @@ const openDetail = (card) => {
     x: camTargetPos.x,
     y: camTargetPos.y,
     z: camTargetPos.z,
-    duration: 1.2,
+    duration: 1.15,
     ease: 'power3.inOut'
   });
 
@@ -657,8 +1098,8 @@ const openDetail = (card) => {
 
   gsap.to(detailOverlay, {
     autoAlpha: 1,
-    duration: 0.75,
-    delay: 0.4,
+    duration: 0.7,
+    delay: 0.35,
     ease: 'power2.out',
     onComplete: () => {
       isRendering = false;
@@ -668,21 +1109,22 @@ const openDetail = (card) => {
 
 const closeDetail = () => {
   if (!isDetailView) return;
+  closeLightbox();
   isRendering = true;
   detailOverlay.classList.remove('active-detail');
+  if (detailStickyBar) detailStickyBar.classList.remove('visible');
 
   if (detailVideoWrapper) {
     detailVideoWrapper.innerHTML = '';
   }
 
-  // Ao voltar para a galeria, garante que o card ativo esteja centralizado e com zoom padrão (zoom = 1)
   const returnCoords = activeCard && activeCard.userData && activeCard.userData.anchorCoords
     ? activeCard.userData.anchorCoords
     : { x: currentRotation.x, y: currentRotation.y };
 
   gsap.to(detailOverlay, {
     autoAlpha: 0,
-    duration: 0.4,
+    duration: 0.38,
     ease: 'power2.in',
     onComplete: () => {
       detailOverlay.style.display = 'none';
@@ -703,19 +1145,105 @@ if (backBtn) {
     if (window.location.hash === '#projeto') {
       history.back();
     } else {
+      history.replaceState(null, '', window.location.pathname);
       closeDetail();
     }
   });
 }
 
+if (detailFavBtn) {
+  detailFavBtn.addEventListener('click', () => {
+    if (activeCard && activeCard.userData) {
+      toggleFavoriteProject(activeCard.userData.id);
+    }
+  });
+}
+
+if (detailShareBtn) {
+  detailShareBtn.addEventListener('click', async () => {
+    if (!activeCard || !activeCard.userData) return;
+    const data = activeCard.userData;
+    const shareUrl = `${window.location.origin}/?projeto=${encodeURIComponent(data.id)}`;
+    const shareTitle = `${data.title || 'Projeto'} | Level Construtora`;
+    const shareText = `Confira o projeto ${data.title || ''} (${data.lotSize ? `Lote ${data.lotSize}` : ''}) da Level Construtora:`;
+
+    trackEvent('compartilhar_projeto', { projeto_titulo: data.title || '' });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        return;
+      } catch (e) {}
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('Link direto do projeto copiado! 🔗');
+    } catch (e) {
+      showToast('Link pronto na barra de endereços!');
+    }
+  });
+}
+
+// Sticky bar visibility on mobile scroll + GA4 Floor Plan View tracking
+if (detailOverlay) {
+  detailOverlay.addEventListener('scroll', throttle(() => {
+    if (!detailStickyBar) return;
+    if (detailOverlay.scrollTop > 340) {
+      detailStickyBar.classList.add('visible');
+    } else {
+      detailStickyBar.classList.remove('visible');
+    }
+  }, 100), { passive: true });
+}
+
+if (detailPlansSection && 'IntersectionObserver' in window) {
+  const plansObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && activeCard && activeCard.userData) {
+        trackEvent('visualizar_planta_projeto', {
+          projeto_titulo: activeCard.userData.title || 'Projeto'
+        });
+      }
+    });
+  }, { threshold: 0.35 });
+  plansObserver.observe(detailPlansSection);
+}
+
 /* ==========================================================================
-   8. MENU / SEARCH OVERLAY WITH COORDINATE ANCHORING & ZOOM RESET
+   10. MULTI-CRITERIA FILTER MENU (BY HOUSE TYPE & LOT SIZE)
    ========================================================================== */
 const openSearchBtn = document.getElementById('open-search-btn');
 const closeSearchBtn = document.getElementById('close-search-btn');
 const searchOverlay = document.getElementById('search-overlay');
 const searchOptionsContainer = document.getElementById('search-options-container');
-let currentFilter = null;
+
+let filterState = {
+  houseType: null,
+  lotSize: null
+};
+
+const normalizeLotSize = (value) => (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
+const updateFilterButtonBadge = () => {
+  if (!openSearchBtn) return;
+  const activeParts = [filterState.houseType, filterState.lotSize ? `LOTE ${filterState.lotSize}` : null].filter(Boolean);
+  if (activeParts.length > 0) {
+    openSearchBtn.innerText = `FILTRO: ${activeParts.join(' • ')}`;
+    openSearchBtn.classList.add('active-filter-btn');
+  } else {
+    openSearchBtn.innerText = 'PESQUISAR PROJETOS';
+    openSearchBtn.classList.remove('active-filter-btn');
+  }
+};
+
+const getFilteredProjects = () => {
+  return allProjects.filter(p => {
+    const matchType = !filterState.houseType || (p.houseType || '').toLowerCase() === filterState.houseType.toLowerCase();
+    const matchLot = !filterState.lotSize || normalizeLotSize(p.lotSize) === filterState.lotSize;
+    return matchType && matchLot;
+  });
+};
 
 const closeSearchMenu = () => {
   if (!searchOverlay || !searchOverlay.classList.contains('active')) return;
@@ -726,10 +1254,15 @@ const closeSearchMenu = () => {
   }
 };
 
-const applyMenuFilterAndFocus = (filterKey, filteredProjects) => {
-  currentFilter = filterKey;
-  // Reconstrói a galeria ancorando o item principal em (X = 0, Y = 0) e reseta o zoom = 1
-  buildGallery(filteredProjects, { resetCamera: true });
+const applyCombinedFilters = () => {
+  const filtered = getFilteredProjects();
+  updateFilterButtonBadge();
+  trackEvent('selecionar_filtro_projetos', {
+    filtro_tipo: filterState.houseType || 'Todos',
+    filtro_lote: filterState.lotSize || 'Todos',
+    qtd_resultados: filtered.length
+  });
+  buildGallery(filtered, { resetCamera: true });
   closeSearchMenu();
 };
 
@@ -739,71 +1272,302 @@ const createMenuButton = (label, isActive, onClick) => {
   btn.className = 'submit-btn';
   btn.style.background = isActive ? '#ffffff' : 'transparent';
   btn.style.color = isActive ? '#050505' : '#ffffff';
-  btn.style.border = isActive ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.35)';
+  btn.style.border = isActive ? '1px solid #ffffff' : '1px solid rgba(255, 255, 255, 0.3)';
   btn.innerText = label;
   btn.addEventListener('click', onClick);
   return btn;
 };
 
-const normalizeLotSize = (value) => (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+const renderSearchModalOptions = () => {
+  if (!searchOptionsContainer) return;
+  searchOptionsContainer.innerHTML = '';
+  const fragment = document.createDocumentFragment();
 
-if (openSearchBtn && searchOverlay && searchOptionsContainer) {
+  const isAllActive = !filterState.houseType && !filterState.lotSize;
+  fragment.appendChild(
+    createMenuButton(`Ver Todos os Projetos (${allProjects.length})`, isAllActive, () => {
+      filterState.houseType = null;
+      filterState.lotSize = null;
+      applyCombinedFilters();
+    })
+  );
+
+  // Seção 1: Por Tipologia de Imóvel
+  const types = [...new Set(allProjects.map(p => (p.houseType || '').trim()).filter(Boolean))];
+  if (types.length > 0) {
+    const typeLabel = document.createElement('p');
+    typeLabel.className = 'menu-section-label';
+    typeLabel.innerText = 'Por Tipologia de Imóvel';
+    fragment.appendChild(typeLabel);
+
+    const typeGrid = document.createElement('div');
+    typeGrid.className = 'filter-chips-grid';
+
+    types.forEach(type => {
+      const count = allProjects.filter(p => (p.houseType || '').trim() === type).length;
+      const isSelected = filterState.houseType === type;
+      typeGrid.appendChild(
+        createMenuButton(`${type} (${count})`, isSelected, () => {
+          filterState.houseType = isSelected ? null : type;
+          applyCombinedFilters();
+        })
+      );
+    });
+    fragment.appendChild(typeGrid);
+  }
+
+  // Seção 2: Por Medida de Lote
+  const sizes = [...new Set(allProjects.map(p => normalizeLotSize(p.lotSize)).filter(Boolean))];
+  if (sizes.length > 0) {
+    const sizeLabel = document.createElement('p');
+    sizeLabel.className = 'menu-section-label';
+    sizeLabel.innerText = 'Por Medida de Lote';
+    fragment.appendChild(sizeLabel);
+
+    const sizeGrid = document.createElement('div');
+    sizeGrid.className = 'filter-chips-grid';
+
+    sizes.forEach(size => {
+      const count = allProjects.filter(p => normalizeLotSize(p.lotSize) === size).length;
+      const isSelected = filterState.lotSize === size;
+      sizeGrid.appendChild(
+        createMenuButton(`Lote ${size} (${count})`, isSelected, () => {
+          filterState.lotSize = isSelected ? null : size;
+          applyCombinedFilters();
+        })
+      );
+    });
+    fragment.appendChild(sizeGrid);
+  }
+
+  // Banner de Captura para Lotes com Medidas Especiais
+  const customBanner = document.createElement('div');
+  customBanner.className = 'custom-lot-banner';
+  const customLotMsg = 'Olá! Estou no site da Level Construtora e meu terreno possui uma medida específica. Gostaria de conversar sobre um projeto personalizado.';
+  customBanner.innerHTML = `
+    <strong>📏 Seu terreno tem outra medida?</strong>
+    <p>Desenvolvemos projetos 100% personalizados para lotes regulares, irregulares ou em esquina em Maringá e região.</p>
+    <a href="${buildWhatsappUrl(customLotMsg)}" target="_blank" rel="noopener noreferrer">Solicitar Projeto Sob Medida</a>
+  `;
+  fragment.appendChild(customBanner);
+
+  searchOptionsContainer.appendChild(fragment);
+};
+
+if (openSearchBtn && searchOverlay) {
   openSearchBtn.addEventListener('click', () => {
     trackEvent('abrir_filtro_projetos');
+    renderSearchModalOptions();
     searchOverlay.classList.add('active');
     if (window.location.hash !== '#pesquisa') {
       history.pushState({ view: 'search' }, '', '#pesquisa');
     }
+  });
+}
 
-    const sizes = [...new Set(allProjects.map(p => normalizeLotSize(p.lotSize)).filter(Boolean))];
-    searchOptionsContainer.innerHTML = '';
+if (closeSearchBtn) closeSearchBtn.addEventListener('click', closeSearchMenu);
+if (searchOverlay) {
+  searchOverlay.addEventListener('click', (e) => {
+    if (e.target === searchOverlay) closeSearchMenu();
+  });
+}
 
-    const fragment = document.createDocumentFragment();
+/* ==========================================================================
+   11. INTERACTIVE 4-STEP OBRA & VIABILITY SIMULATOR (P4)
+   ========================================================================== */
+const openSimulatorBtn = document.getElementById('open-simulator-btn');
+const closeSimulatorBtn = document.getElementById('close-simulator-btn');
+const simulatorOverlay = document.getElementById('simulator-overlay');
+const simulatorProgressBar = document.getElementById('simulator-progress-bar');
+const simAreaRange = document.getElementById('sim-area-range');
+const simAreaDisplay = document.getElementById('sim-area-display');
+const simLotInput = document.getElementById('sim-lot-input');
+const simStep3Next = document.getElementById('sim-step3-next');
+const simSummaryBox = document.getElementById('sim-summary-box');
+const simRecommendationsList = document.getElementById('sim-recommendations-list');
+const simWhatsappCta = document.getElementById('sim-whatsapp-cta');
+const simResetBtn = document.getElementById('sim-reset-btn');
+const simFilterGalleryBtn = document.getElementById('sim-filter-gallery-btn');
 
-    // Opção 1: Ver Todos (reseta filtro, reseta zoom = 1 e centraliza câmera em X=0, Y=0)
-    fragment.appendChild(
-      createMenuButton(`Ver Todos (${allProjects.length})`, currentFilter === null, () => {
-        applyMenuFilterAndFocus(null, allProjects);
-      })
-    );
+const simState = {
+  step: 1,
+  landStatus: '',
+  houseType: '',
+  area: '220 m²',
+  lotSize: '',
+  scope: ''
+};
 
-    // Opção 2: Filtro por Medida de Lote
-    if (sizes.length > 0) {
-      const sizeLabel = document.createElement('p');
-      sizeLabel.className = 'menu-section-label';
-      sizeLabel.innerText = 'Por Medida de Lote';
-      fragment.appendChild(sizeLabel);
+const goToSimulatorStep = (stepNumber) => {
+  simState.step = stepNumber;
+  const steps = document.querySelectorAll('.sim-step');
+  steps.forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.step) === stepNumber);
+  });
+  if (simulatorProgressBar) {
+    const pct = Math.min(100, Math.round((stepNumber / 5) * 100));
+    simulatorProgressBar.style.width = `${pct}%`;
+  }
+  if (stepNumber === 5) {
+    renderSimulatorResults();
+  }
+};
 
-      sizes.forEach(size => {
-        fragment.appendChild(
-          createMenuButton(`Lote ${size}`, currentFilter === size, () => {
-            const filtered = allProjects.filter(p => normalizeLotSize(p.lotSize) === size);
-            applyMenuFilterAndFocus(size, filtered);
-          })
-        );
+const openSimulator = () => {
+  if (!simulatorOverlay) return;
+  trackEvent('iniciar_simulador_obra');
+  goToSimulatorStep(1);
+  simulatorOverlay.classList.add('active');
+};
+
+const closeSimulator = () => {
+  if (!simulatorOverlay) return;
+  simulatorOverlay.classList.remove('active');
+};
+
+if (openSimulatorBtn) openSimulatorBtn.addEventListener('click', openSimulator);
+if (detailOpenSimulatorBtn) {
+  detailOpenSimulatorBtn.addEventListener('click', () => {
+    openSimulator();
+  });
+}
+if (closeSimulatorBtn) closeSimulatorBtn.addEventListener('click', closeSimulator);
+if (simulatorOverlay) {
+  simulatorOverlay.addEventListener('click', (e) => {
+    if (e.target === simulatorOverlay) closeSimulator();
+  });
+}
+
+if (simAreaRange && simAreaDisplay) {
+  simAreaRange.addEventListener('input', (e) => {
+    const val = Number(e.target.value);
+    const formatted = val >= 450 ? '450+ m²' : `${val} m²`;
+    simAreaDisplay.innerText = formatted;
+    simState.area = formatted;
+  });
+}
+
+document.querySelectorAll('.sim-option-card').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const field = btn.dataset.field;
+    const value = btn.dataset.value;
+    if (field) simState[field] = value;
+
+    if (simState.step === 1) goToSimulatorStep(2);
+    else if (simState.step === 2) goToSimulatorStep(3);
+    else if (simState.step === 4) goToSimulatorStep(5);
+  });
+});
+
+document.querySelectorAll('.sim-prev-btn[data-prev]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    goToSimulatorStep(Number(btn.dataset.prev));
+  });
+});
+
+if (simStep3Next) {
+  simStep3Next.addEventListener('click', () => {
+    simState.lotSize = simLotInput ? simLotInput.value.trim() : '';
+    goToSimulatorStep(4);
+  });
+}
+
+if (simResetBtn) {
+  simResetBtn.addEventListener('click', () => goToSimulatorStep(1));
+}
+
+const renderSimulatorResults = () => {
+  trackEvent('concluir_simulador_obra', {
+    terreno: simState.landStatus,
+    tipologia: simState.houseType,
+    area_estimada: simState.area,
+    escopo: simState.scope
+  });
+
+  if (simSummaryBox) {
+    simSummaryBox.innerHTML = `
+      <div><strong>• Terreno:</strong> ${simState.landStatus || 'A definir'} ${simState.lotSize ? `(${simState.lotSize})` : ''}</div>
+      <div><strong>• Tipologia Preferida:</strong> ${simState.houseType || 'Aberta'}</div>
+      <div><strong>• Área Estimada:</strong> ${simState.area}</div>
+      <div><strong>• Escopo:</strong> ${simState.scope}</div>
+    `;
+  }
+
+  // Encontra projetos compatíveis no portfólio
+  let matches = allProjects.filter(p => {
+    if (!simState.houseType || simState.houseType === 'Indiferente') return true;
+    return (p.houseType || '').toLowerCase() === simState.houseType.toLowerCase();
+  });
+
+  if (matches.length === 0) matches = allProjects.slice(0, 3);
+  else matches = matches.slice(0, 3);
+
+  if (simRecommendationsList) {
+    simRecommendationsList.innerHTML = '';
+    if (matches.length === 0) {
+      simRecommendationsList.innerHTML = '<p style="font-size:0.82rem; color:#999;">Criaremos um estudo exclusivo sob medida para o seu perfil.</p>';
+    } else {
+      matches.forEach(proj => {
+        const thumb = (proj.facades && proj.facades[0]) ? proj.facades[0] : (proj.facade || '');
+        const itemBtn = document.createElement('button');
+        itemBtn.type = 'button';
+        itemBtn.className = 'sim-rec-item';
+        itemBtn.innerHTML = `
+          ${thumb ? `<img src="${thumb}" alt="${proj.title}" />` : ''}
+          <div class="sim-rec-info">
+            <strong>${proj.title || 'Projeto Level'}</strong>
+            <span>${[proj.houseType, proj.lotSize ? `Lote ${proj.lotSize}` : '', proj.area].filter(Boolean).join(' • ')}</span>
+          </div>
+        `;
+        itemBtn.addEventListener('click', () => {
+          closeSimulator();
+          const targetCard = cards.find(c => String(c.userData.id) === String(proj.id));
+          if (targetCard) openDetail(targetCard);
+        });
+        simRecommendationsList.appendChild(itemBtn);
       });
     }
+  }
 
-    searchOptionsContainer.appendChild(fragment);
-  });
-}
+  if (simWhatsappCta) {
+    const briefingMsg = [
+      'Olá! Fiz a simulação de obra no site da Level Construtora e gostaria de conversar com um especialista:',
+      `• Terreno: ${simState.landStatus}${simState.lotSize ? ` (${simState.lotSize})` : ''}`,
+      `• Tipologia: ${simState.houseType}`,
+      `• Área Estimada: ${simState.area}`,
+      `• Objetivo: ${simState.scope}`
+    ].join('\n');
+    simWhatsappCta.href = buildWhatsappUrl(briefingMsg);
+  }
 
-if (closeSearchBtn) {
-  closeSearchBtn.addEventListener('click', closeSearchMenu);
-}
+  if (simFilterGalleryBtn) {
+    simFilterGalleryBtn.onclick = () => {
+      closeSimulator();
+      if (isDetailView) closeDetail();
+      filterState.houseType = (simState.houseType && simState.houseType !== 'Indiferente') ? simState.houseType : null;
+      filterState.lotSize = null;
+      applyCombinedFilters();
+    };
+  }
+};
 
-if (searchOverlay) {
-  // Permite fechar o menu clicando fora do modal (no backdrop)
-  searchOverlay.addEventListener('click', (e) => {
-    if (e.target === searchOverlay) {
-      closeSearchMenu();
-    }
-  });
-}
-
+/* ==========================================================================
+   12. KEYBOARD & HISTORY NAVIGATION
+   ========================================================================== */
 window.addEventListener('keydown', (e) => {
+  if (lightboxOverlay && lightboxOverlay.classList.contains('active')) {
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft' && lightboxPrevBtn) lightboxPrevBtn.click();
+    if (e.key === 'ArrowRight' && lightboxNextBtn) lightboxNextBtn.click();
+    return;
+  }
+
   if (e.key === 'Escape') {
-    if (searchOverlay && searchOverlay.classList.contains('active')) {
+    if (simulatorOverlay && simulatorOverlay.classList.contains('active')) {
+      closeSimulator();
+    } else if (compareOverlay && compareOverlay.classList.contains('active')) {
+      compareOverlay.classList.remove('active');
+    } else if (searchOverlay && searchOverlay.classList.contains('active')) {
       closeSearchMenu();
     } else if (isDetailView) {
       if (window.location.hash === '#projeto') history.back();
@@ -822,7 +1586,7 @@ window.addEventListener('popstate', () => {
 });
 
 /* ==========================================================================
-   9. FAST PARALLEL INITIALIZATION & SOCIAL LINKS
+   13. FAST PARALLEL INITIALIZATION, DEEP LINKING & SOCIAL LINKS
    ========================================================================== */
 const linkInstagram = document.getElementById('link-instagram');
 const linkFacebook = document.getElementById('link-facebook');
@@ -847,10 +1611,23 @@ const updateSocialLink = (element, url, enabled) => {
   }
 };
 
+const checkInitialDeepLink = () => {
+  const params = new URLSearchParams(window.location.search);
+  let targetId = params.get('projeto');
+  if (!targetId && window.location.hash.startsWith('#projeto-')) {
+    targetId = window.location.hash.replace('#projeto-', '');
+  }
+  if (!targetId) return;
+
+  const targetCard = cards.find(c => String(c.userData.id) === String(targetId));
+  if (targetCard) {
+    openDetail(targetCard);
+  }
+};
+
 const initApp = async () => {
   try {
     const cacheBuster = Date.now();
-    // Carregamento paralelo para reduzir pela metade o tempo de espera na inicialização
     const [settingsRes, projectsRes] = await Promise.all([
       fetch(`/api/settings?t=${cacheBuster}`, { cache: 'no-store' }).catch(() => null),
       fetch(`/api/projects?t=${cacheBuster}`, { cache: 'no-store' }).catch(() => null)
@@ -860,17 +1637,11 @@ const initApp = async () => {
       const data = await settingsRes.json();
       siteSettings = data || {};
 
-      let cleanNumber = '5544998641000';
-      if (data.whatsapp) {
-        const match = data.whatsapp.match(/(\d{10,15})/);
-        if (match) cleanNumber = match[1];
-      }
-
       const customMsg = data.whatsappMsg !== undefined && data.whatsappMsg !== ''
         ? data.whatsappMsg
         : 'Olá! Encontrei a construtora no Google, gostaria de mais informações.';
 
-      const whatsUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(customMsg)}`;
+      const whatsUrl = buildWhatsappUrl(customMsg);
 
       updateSocialLink(linkInstagram, data.instagram, data.instagramEnabled);
       updateSocialLink(linkFacebook, data.facebook, data.facebookEnabled);
@@ -894,7 +1665,11 @@ const initApp = async () => {
     if (projectsRes && projectsRes.ok) {
       const rawProjects = await projectsRes.json();
       allProjects = mergeProjectMeta(rawProjects, siteSettings);
-      buildGallery(allProjects, { resetCamera: true });
+      updateFavoritesUI();
+      buildGallery(allProjects, {
+        resetCamera: true,
+        onReady: checkInitialDeepLink
+      });
     } else {
       buildGallery([], { resetCamera: true });
     }
@@ -909,7 +1684,7 @@ initApp();
 document.body.style.cursor = 'grab';
 
 /* ==========================================================================
-   10. HIGH-EFFICIENCY 60FPS RENDER LOOP & DEBOUNCED RESIZE
+   14. HIGH-EFFICIENCY 60FPS RENDER LOOP & DEBOUNCED RESIZE
    ========================================================================== */
 document.addEventListener('visibilitychange', () => {
   isTabVisible = !document.hidden;
@@ -926,7 +1701,6 @@ const tick = (now = performance.now()) => {
   if (!isTabVisible) return;
 
   if (!isDetailView) {
-    // Interpolação independente de taxa de quadros (frame-rate independent damping)
     const damping = 1 - Math.pow(0.001, deltaSeconds);
 
     currentRotation.x += (targetRotation.x - currentRotation.x) * damping;

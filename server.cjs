@@ -15,6 +15,7 @@ const IMAGES_DIR = path.join(__dirname, 'images');
 const DATA_FILE = path.join(__dirname, 'data.json');
 const PASSWORD_FILE = path.join(__dirname, 'password.json');
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+const INDEX_HTML_FILE = path.join(__dirname, 'index.html');
 
 if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -41,6 +42,47 @@ function toBool(val, defaultVal = true) {
   return defaultVal;
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const META_SEPARATOR = '\n<!--LEVEL_META:';
+const META_END = '-->';
+
+function unpackServerProject(p, settings) {
+  let rawDesc = p.desc || '';
+  let embedded = {};
+  const sepIdx = rawDesc.indexOf(META_SEPARATOR);
+  if (sepIdx !== -1) {
+    const endIdx = rawDesc.indexOf(META_END, sepIdx);
+    if (endIdx !== -1) {
+      try {
+        embedded = JSON.parse(rawDesc.slice(sepIdx + META_SEPARATOR.length, endIdx));
+      } catch (e) {}
+    }
+    rawDesc = rawDesc.slice(0, sepIdx).trim();
+  }
+  const metaMap = (settings && settings.projectMeta) ? settings.projectMeta : {};
+  const extra = metaMap[p.id] || {};
+
+  return {
+    ...p,
+    cleanDesc: rawDesc,
+    area: p.area || extra.area || embedded.area || '',
+    bedrooms: p.bedrooms || extra.bedrooms || embedded.bedrooms || '',
+    garage: p.garage || extra.garage || embedded.garage || '',
+    status: p.status || extra.status || embedded.status || 'Projeto Exclusivo',
+    videoUrl: p.videoUrl || extra.videoUrl || embedded.videoUrl || '',
+    visible: p.visible !== undefined ? p.visible : (extra.visible !== undefined ? extra.visible : (embedded.visible !== false)),
+    order: typeof p.order === 'number' ? p.order : (typeof extra.order === 'number' ? extra.order : (typeof embedded.order === 'number' ? embedded.order : 9999))
+  };
+}
+
 if (!fs.existsSync(PASSWORD_FILE)) {
   writeJsonSafe(PASSWORD_FILE, { password: 'admin123' });
 }
@@ -52,7 +94,7 @@ const DEFAULT_SETTINGS = {
   facebookEnabled: true,
   youtube: '',
   youtubeEnabled: true,
-  whatsapp: '',
+  whatsapp: 'https://wa.me/5544998641000',
   whatsappEnabled: true,
   whatsappMsg: 'Olá! Encontrei a construtora no Google, gostaria de mais informações.',
   address: 'Avenida Centenário 520, Maringá - PR',
@@ -67,18 +109,24 @@ if (!fs.existsSync(SETTINGS_FILE)) {
   writeJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
 }
 
+function getValidProjects() {
+  const projects = readJsonSafe(DATA_FILE, []);
+  if (!Array.isArray(projects)) return [];
+  return projects.filter(p => {
+    const facades = p.facades || (p.facade ? [p.facade] : []);
+    if (facades.length === 0) return false;
+    const firstImg = path.join(IMAGES_DIR, path.basename(facades[0]));
+    return fs.existsSync(firstImg);
+  });
+}
+
 function cleanGhostProjects() {
   const projects = readJsonSafe(DATA_FILE, []);
   if (!Array.isArray(projects)) {
     writeJsonSafe(DATA_FILE, []);
     return;
   }
-  const validProjects = projects.filter(p => {
-    const facades = p.facades || (p.facade ? [p.facade] : []);
-    if (facades.length === 0) return false;
-    const firstImg = path.join(IMAGES_DIR, path.basename(facades[0]));
-    return fs.existsSync(firstImg);
-  });
+  const validProjects = getValidProjects();
   if (validProjects.length !== projects.length) {
     writeJsonSafe(DATA_FILE, validProjects);
   }
@@ -116,7 +164,184 @@ app.get('/images/logo.png', (req, res) => {
   return res.status(404).end();
 });
 
-app.use('/images', express.static(IMAGES_DIR));
+// Cache agressivo para imagens imutáveis de projetos (30 dias)
+app.use('/images', express.static(IMAGES_DIR, {
+  maxAge: '30d',
+  immutable: true
+}));
+
+/* ==========================================================================
+   SEO, AEO (/llms.txt), SITEMAP & DYNAMIC SSR INJECTION
+   ========================================================================== */
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(
+`User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /api/
+
+Sitemap: https://levelconstrutora.com/sitemap.xml
+`
+  );
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const settings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+  const validProjects = getValidProjects()
+    .map(p => unpackServerProject(p, settings))
+    .filter(p => p.visible !== false)
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+
+  const urls = [
+    `  <url>
+    <loc>https://levelconstrutora.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>`
+  ];
+
+  validProjects.forEach(p => {
+    urls.push(
+`  <url>
+    <loc>https://levelconstrutora.com/?projeto=${encodeURIComponent(p.id)}</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>`
+    );
+  });
+
+  res.type('application/xml');
+  res.send(
+`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.join('\n')}
+</urlset>`
+  );
+});
+
+app.get('/llms.txt', (req, res) => {
+  const settings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+  const validProjects = getValidProjects()
+    .map(p => unpackServerProject(p, settings))
+    .filter(p => p.visible !== false)
+    .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+
+  const lines = [
+    '# Level Construtora — Arquitetura, Engenharia Civil e Obras em Maringá - PR',
+    '',
+    '> Escritório de arquitetura, engenharia civil e construtora especializada em casas térreas, sobrados de alto padrão, casas geminadas e obras residenciais em Maringá e Região Metropolitana (Sarandi, Marialva, Paiçandu).',
+    '',
+    '## Informações de Contato e Localização',
+    `- Endereço: ${settings.address || 'Avenida Centenário, 520, Maringá - PR'}`,
+    `- Site Oficial: https://levelconstrutora.com/`,
+    `- Serviços: Projetos Arquitetônicos 3D, Projetos Estruturais, Elétricos, Hidrossanitários e Execução Completa de Obras (Turnkey).`,
+    '',
+    '## Catálogo de Projetos Recentes'
+  ];
+
+  if (validProjects.length === 0) {
+    lines.push('- Portfólio personalizado para terrenos de 10x25m, 12x25m, 12x30m, 15x30m e lotes em condomínios fechados em Maringá.');
+  } else {
+    validProjects.forEach(p => {
+      const specs = [
+        p.houseType ? `Tipologia: ${p.houseType}` : null,
+        p.lotSize ? `Lote: ${p.lotSize}` : null,
+        p.area ? `Área: ${p.area}` : null,
+        p.bedrooms ? `Quartos: ${p.bedrooms}` : null,
+        p.garage ? `Garagem: ${p.garage}` : null,
+        p.status ? `Status: ${p.status}` : null
+      ].filter(Boolean).join(' | ');
+      lines.push(`### ${p.title || 'Projeto Residencial'} (${p.subtitle || 'Maringá - PR'})`);
+      if (specs) lines.push(`- Especificações: ${specs}`);
+      if (p.cleanDesc) lines.push(`- Descrição: ${p.cleanDesc}`);
+      lines.push(`- Link Direto: https://levelconstrutora.com/?projeto=${encodeURIComponent(p.id)}`);
+      lines.push('');
+    });
+  }
+
+  res.type('text/plain; charset=utf-8');
+  res.send(lines.join('\n'));
+});
+
+function renderIndexHtml(req, res) {
+  try {
+    let html = fs.readFileSync(INDEX_HTML_FILE, 'utf8');
+    const settings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+    const validProjects = getValidProjects()
+      .map(p => unpackServerProject(p, settings))
+      .filter(p => p.visible !== false)
+      .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+
+    // 1. Injeção Semântica de Projetos para Googlebot e Motores de Busca de IA
+    if (validProjects.length > 0) {
+      const articlesHtml = validProjects.map(p => {
+        const firstFacade = (p.facades && p.facades[0]) ? p.facades[0] : (p.facade || '');
+        return `<article>
+          <h4>${escapeHtml(p.title)} - ${escapeHtml(p.houseType || 'Residencial')} (${escapeHtml(p.subtitle || 'Maringá - PR')})</h4>
+          <p>Lote: ${escapeHtml(p.lotSize || 'Sob consulta')} | Área Construída: ${escapeHtml(p.area || 'Sob consulta')} | ${escapeHtml(p.bedrooms || '')} | ${escapeHtml(p.garage || '')}</p>
+          <p>${escapeHtml(p.cleanDesc || '')}</p>
+          ${firstFacade ? `<img src="${escapeHtml(firstFacade)}" alt="${escapeHtml(p.title)} - Fachada 3D Level Construtora" />` : ''}
+        </article>`;
+      }).join('\n');
+
+      html = html.replace('<!--SSR_PORTFOLIO_CATALOG-->', articlesHtml);
+
+      const itemListSchema = {
+        '@context': 'https://schema.org',
+        '@type': 'ItemList',
+        'name': 'Portfólio de Projetos Arquitetônicos e Obras - Level Construtora',
+        'itemListElement': validProjects.map((p, idx) => ({
+          '@type': 'ListItem',
+          'position': idx + 1,
+          'name': p.title || `Projeto ${idx + 1}`,
+          'description': p.cleanDesc || `${p.houseType || 'Projeto'} para lote ${p.lotSize || ''}`,
+          'url': `https://levelconstrutora.com/?projeto=${encodeURIComponent(p.id)}`
+        }))
+      };
+      html = html.replace(
+        '<!--SSR_DYNAMIC_SCHEMA-->',
+        `<script type="application/ld+json">${JSON.stringify(itemListSchema)}</script>`
+      );
+    }
+
+    // 2. Open Graph Dinâmico quando um projeto específico é compartilhado (?projeto=ID)
+    const targetProjectId = req.query && req.query.projeto ? String(req.query.projeto) : null;
+    if (targetProjectId) {
+      const targetProj = validProjects.find(p => String(p.id) === targetProjectId);
+      if (targetProj) {
+        const ogTitle = `${targetProj.title} | ${targetProj.houseType || 'Projeto'} (${targetProj.lotSize || 'Level Construtora'})`;
+        const ogDesc = targetProj.cleanDesc
+          ? targetProj.cleanDesc.slice(0, 180)
+          : `Conheça o projeto ${targetProj.title} (${targetProj.lotSize || ''}) desenvolvido pela Level Construtora em Maringá - PR.`;
+        const firstFacade = (targetProj.facades && targetProj.facades[0]) ? targetProj.facades[0] : '/images/logo.png';
+        const absoluteImg = firstFacade.startsWith('http')
+          ? firstFacade
+          : `https://levelconstrutora.com${firstFacade}`;
+        const absoluteUrl = `https://levelconstrutora.com/?projeto=${encodeURIComponent(targetProj.id)}`;
+
+        html = html
+          .replace(/<title>.*?<\/title>/i, `<title>${escapeHtml(ogTitle)}</title>`)
+          .replace(/<meta property="og:title" content=".*?" \/>/i, `<meta property="og:title" content="${escapeHtml(ogTitle)}" />`)
+          .replace(/<meta property="og:description" content=".*?" \/>/i, `<meta property="og:description" content="${escapeHtml(ogDesc)}" />`)
+          .replace(/<meta property="og:image" content=".*?" \/>/i, `<meta property="og:image" content="${escapeHtml(absoluteImg)}" />`)
+          .replace(/<meta property="og:url" content=".*?" \/>/i, `<meta property="og:url" content="${escapeHtml(absoluteUrl)}" />`)
+          .replace(/<meta name="twitter:title" content=".*?" \/>/i, `<meta name="twitter:title" content="${escapeHtml(ogTitle)}" />`)
+          .replace(/<meta name="twitter:description" content=".*?" \/>/i, `<meta name="twitter:description" content="${escapeHtml(ogDesc)}" />`)
+          .replace(/<meta name="twitter:image" content=".*?" \/>/i, `<meta name="twitter:image" content="${escapeHtml(absoluteImg)}" />`);
+      }
+    }
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
+  } catch (err) {
+    return res.sendFile(INDEX_HTML_FILE);
+  }
+}
+
+app.get('/', renderIndexHtml);
+app.get('/index.html', renderIndexHtml);
+
 app.use(express.static(__dirname));
 
 const storage = multer.diskStorage({
@@ -288,13 +513,7 @@ app.get('/api/projects', (req, res) => {
     return res.json(projects);
   }
 
-  const validProjects = projects.filter(p => {
-    const facades = p.facades || (p.facade ? [p.facade] : []);
-    if (facades.length === 0) return false;
-    const fileOnDisk = path.join(IMAGES_DIR, path.basename(facades[0]));
-    return fs.existsSync(fileOnDisk);
-  });
-
+  const validProjects = getValidProjects();
   res.json(validProjects);
 });
 
@@ -303,7 +522,7 @@ app.post('/api/projects', requireAuth, upload.fields([
   { name: 'plans', maxCount: 10 }
 ]), (req, res) => {
   try {
-    const { title, subtitle, lotSize, houseType, desc } = req.body;
+    const { title, subtitle, lotSize, houseType, desc, area, bedrooms, garage, status, videoUrl, visible, order } = req.body;
     const facades = (req.files && req.files['facades'])
       ? req.files['facades'].map(f => `/images/${f.filename}`)
       : [];
@@ -318,12 +537,24 @@ app.post('/api/projects', requireAuth, upload.fields([
       lotSize: (lotSize || '').trim(),
       houseType: houseType || 'Térrea',
       desc: (desc || '').trim(),
+      area: (area || '').trim(),
+      bedrooms: (bedrooms || '').trim(),
+      garage: (garage || '').trim(),
+      status: status || 'Projeto Exclusivo',
+      videoUrl: (videoUrl || '').trim(),
+      visible: toBool(visible, true),
+      order: order !== undefined && !isNaN(Number(order)) ? Number(order) : 0,
       facades,
       plans
     };
 
     const projects = readJsonSafe(DATA_FILE, []);
     const list = Array.isArray(projects) ? projects : [];
+    // Increment existing orders if new project is inserted at top
+    list.forEach((p, idx) => {
+      if (typeof p.order !== 'number') p.order = idx + 1;
+      else p.order += 1;
+    });
     list.unshift(newProject);
     writeJsonSafe(DATA_FILE, list);
 
@@ -331,6 +562,109 @@ app.post('/api/projects', requireAuth, upload.fields([
   } catch (err) {
     console.error('Erro ao adicionar projeto:', err);
     res.status(500).json({ error: 'Falha ao salvar projeto' });
+  }
+});
+
+// Rota dedicada PUT /api/projects/:id (atualiza sem precisar re-enviar imagens existentes)
+app.put('/api/projects/:id', requireAuth, upload.fields([
+  { name: 'facades', maxCount: 10 },
+  { name: 'plans', maxCount: 10 }
+]), (req, res) => {
+  try {
+    const targetId = String(req.params.id);
+    const projects = readJsonSafe(DATA_FILE, []);
+    const list = Array.isArray(projects) ? projects : [];
+    const idx = list.findIndex(p => String(p.id) === targetId);
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const existing = list[idx];
+    const { title, subtitle, lotSize, houseType, desc, area, bedrooms, garage, status, videoUrl, visible, order } = req.body;
+
+    const uploadedFacades = (req.files && req.files['facades'] && req.files['facades'].length > 0)
+      ? req.files['facades'].map(f => `/images/${f.filename}`)
+      : null;
+
+    const uploadedPlans = (req.files && req.files['plans'] && req.files['plans'].length > 0)
+      ? req.files['plans'].map(f => `/images/${f.filename}`)
+      : null;
+
+    // Remove arquivos antigos do disco somente se novas imagens foram enviadas para substituí-las
+    if (uploadedFacades) {
+      const oldFacades = existing.facades || (existing.facade ? [existing.facade] : []);
+      oldFacades.forEach(fPath => {
+        const fullP = path.join(IMAGES_DIR, path.basename(fPath));
+        if (fs.existsSync(fullP)) {
+          try { fs.unlinkSync(fullP); } catch (e) {}
+        }
+      });
+    }
+
+    if (uploadedPlans) {
+      const oldPlans = existing.plans || (existing.plan ? [existing.plan] : []);
+      oldPlans.forEach(fPath => {
+        const fullP = path.join(IMAGES_DIR, path.basename(fPath));
+        if (fs.existsSync(fullP)) {
+          try { fs.unlinkSync(fullP); } catch (e) {}
+        }
+      });
+    }
+
+    const updatedProject = {
+      ...existing,
+      title: title !== undefined ? String(title).trim() : existing.title,
+      subtitle: subtitle !== undefined ? String(subtitle).trim() : existing.subtitle,
+      lotSize: lotSize !== undefined ? String(lotSize).trim() : existing.lotSize,
+      houseType: houseType !== undefined ? houseType : existing.houseType,
+      desc: desc !== undefined ? String(desc).trim() : existing.desc,
+      area: area !== undefined ? String(area).trim() : (existing.area || ''),
+      bedrooms: bedrooms !== undefined ? String(bedrooms).trim() : (existing.bedrooms || ''),
+      garage: garage !== undefined ? String(garage).trim() : (existing.garage || ''),
+      status: status !== undefined ? status : (existing.status || 'Projeto Exclusivo'),
+      videoUrl: videoUrl !== undefined ? String(videoUrl).trim() : (existing.videoUrl || ''),
+      visible: visible !== undefined ? toBool(visible, true) : (existing.visible !== false),
+      order: order !== undefined && !isNaN(Number(order)) ? Number(order) : (typeof existing.order === 'number' ? existing.order : idx),
+      facades: uploadedFacades || existing.facades || (existing.facade ? [existing.facade] : []),
+      plans: uploadedPlans || existing.plans || (existing.plan ? [existing.plan] : [])
+    };
+
+    list[idx] = updatedProject;
+    writeJsonSafe(DATA_FILE, list);
+
+    res.json({ success: true, project: updatedProject });
+  } catch (err) {
+    console.error('Erro ao atualizar projeto:', err);
+    res.status(500).json({ error: 'Falha ao atualizar projeto' });
+  }
+});
+
+// Rota dedicada para reordenar projetos e definir qual fica no centro da Galeria 3D (index 0)
+app.post('/api/projects/reorder', requireAuth, (req, res) => {
+  try {
+    const { orderedIds } = req.body || {};
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ error: 'Lista de IDs inválida' });
+    }
+
+    const projects = readJsonSafe(DATA_FILE, []);
+    const list = Array.isArray(projects) ? projects : [];
+    const orderMap = new Map();
+    orderedIds.forEach((id, index) => orderMap.set(String(id), index));
+
+    const updatedList = list
+      .map((p, fallbackIdx) => {
+        const newOrder = orderMap.has(String(p.id)) ? orderMap.get(String(p.id)) : (1000 + fallbackIdx);
+        return { ...p, order: newOrder };
+      })
+      .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+
+    writeJsonSafe(DATA_FILE, updatedList);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao reordenar projetos:', err);
+    res.status(500).json({ error: 'Falha ao salvar ordem dos projetos' });
   }
 });
 

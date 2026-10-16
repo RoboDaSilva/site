@@ -14,13 +14,13 @@
   <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
     "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/index.js"
   }
 }
   </script>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="icon" type="image/png" href="/images/logo.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <!-- SEO Principal Avançado: Construtora, Arquitetura e Engenharia Civil -->
@@ -146,32 +146,45 @@
               "@type": "Answer",
               "text": "Estamos localizados na Avenida Centenário, 520, em Maringá - PR. Atendemos Maringá e toda a região metropolitana."
             }
+          },
+          {
+            "@type": "Question",
+            "name": "A Level Construtora adapta projetos para a medida do meu terreno?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sim! Além do nosso portfólio para lotes de 10x25m, 12x25m, 12x30m e 15x30m, desenvolvemos e adaptamos projetos arquitetônicos e executivos personalizados para qualquer medida ou topografia de terreno em Maringá e condomínios fechados."
+            }
           }
         ]
       }
     ]
   }
   </script>
+  <!--SSR_DYNAMIC_SCHEMA-->
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
-  <!-- Conteúdo Semântico de SEO para Indexação do Google (Invisível no layout 3D) -->
-  <section aria-hidden="false" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+  <!-- Conteúdo Semântico de SEO para Indexação do Google e IAs (SSR Injected) -->
+  <section class="sr-only-seo">
     <h1>Level Construtora - Construtora, Arquitetura e Engenharia Civil em Maringá - PR</h1>
     <h2>Projetos Arquitetônicos, Engenharia e Construção de Casas de Alto Padrão</h2>
     <p>A Level Construtora é referência em Maringá e região na elaboração de projetos arquitetônicos modernos, projetos de engenharia civil (estrutural, elétrico e hidrossanitário) e execução completa de obras residenciais.</p>
     <h3>Especialistas em Casas Térreas e Sobrados em Condomínios</h3>
-    <p>Desenvolvemos projetos personalizados para diferentes medidas de lote (como terrenos de 12x25m, 15x30m e lotes em condomínios fechados em Maringá). Do estudo preliminar e renderização 3D realista até a entrega das chaves.</p>
+    <p>Desenvolvemos projetos personalizados para diferentes medidas de lote (como terrenos de 10x25m, 12x25m, 15x30m e lotes em condomínios fechados em Maringá). Do estudo preliminar e renderização 3D realista até a entrega das chaves.</p>
     <p>Endereço: Avenida Centenário, 520, Maringá - Paraná. Telefone e WhatsApp: (44) 99864-1000.</p>
+    <div id="seo-portfolio-catalog">
+      <!--SSR_PORTFOLIO_CATALOG-->
+    </div>
   </section>
 
   <div id="app">
     <div id="loader" class="loader">Carregando Galeria...</div>
+    <div id="ui-toast" class="ui-toast" role="status" aria-live="polite"></div>
 
     <!-- UI Layer -->
     <div class="ui-layer">
@@ -179,19 +192,200 @@
         <img class="site-logo" src="/images/logo.png" alt="Level Construtora" decoding="async" onerror="this.style.display='none'" onload="this.style.display='block'">
         <div class="nav">
           <button id="open-search-btn" class="back-btn" type="button">PESQUISAR PROJETOS</button>
+          <button id="open-simulator-btn" class="back-btn btn-accent-gold" type="button">SIMULAR MINHA OBRA</button>
+          <button id="open-compare-btn" class="back-btn btn-compare-pill" type="button" style="display: none;">FAVORITOS (0)</button>
         </div>
       </header>
     </div>
 
-    <!-- Search / Menu Overlay -->
+    <!-- Onboarding Gesture Hint (3D Affordance) -->
+    <div id="gesture-hint" class="gesture-hint" aria-hidden="true">
+      <span class="gesture-icon">↔</span>
+      <span>Arraste em 360° para explorar • Toque num projeto para abrir</span>
+    </div>
+
+    <!-- Search / Multi-Filter Overlay -->
     <div id="search-overlay" class="admin-overlay" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
       <div class="admin-modal">
         <div class="admin-header">
-          <h2 id="search-modal-title">Filtrar Projetos</h2>
+          <h2 id="search-modal-title">Filtrar Portfólio</h2>
           <button id="close-search-btn" class="close-btn" type="button" aria-label="Fechar menu">&times;</button>
         </div>
         <div id="search-options-container"></div>
       </div>
+    </div>
+
+    <!-- Interactive Viability & Obra Simulator Overlay (P4) -->
+    <div id="simulator-overlay" class="admin-overlay" role="dialog" aria-modal="true" aria-labelledby="simulator-modal-title">
+      <div class="admin-modal simulator-modal">
+        <div class="admin-header">
+          <div>
+            <span class="modal-eyebrow">PLANEJAMENTO INTELIGENTE</span>
+            <h2 id="simulator-modal-title">Configurador de Obra & Projeto</h2>
+          </div>
+          <button id="close-simulator-btn" class="close-btn" type="button" aria-label="Fechar simulador">&times;</button>
+        </div>
+
+        <div class="simulator-progress">
+          <div id="simulator-progress-bar" class="simulator-progress-bar" style="width: 25%;"></div>
+        </div>
+
+        <div id="simulator-body" class="simulator-body">
+          <!-- Step 1: Terreno -->
+          <div class="sim-step active" data-step="1">
+            <p class="sim-step-counter">Passo 1 de 4 • Situação do Lote</p>
+            <h3 class="sim-question">Você já possui o terreno para construir?</h3>
+            <div class="sim-options-grid">
+              <button type="button" class="sim-option-card" data-field="landStatus" data-value="Já possuo em Condomínio Fechado">
+                <strong>🏡 Sim, em Condomínio Fechado</strong>
+                <span>Busco alto padrão e aprovação ágil no condomínio</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="landStatus" data-value="Já possuo em Bairro Aberto">
+                <strong>📍 Sim, em Bairro / Loteamento</strong>
+                <span>Quero aproveitar ao máximo a metragem do meu terreno</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="landStatus" data-value="Ainda estou escolhendo o terreno">
+                <strong>🔍 Ainda estou procurando terreno</strong>
+                <span>Quero ajuda técnica para escolher o lote ideal em Maringá</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2: Tipologia -->
+          <div class="sim-step" data-step="2">
+            <p class="sim-step-counter">Passo 2 de 4 • Estilo Arquitetônico</p>
+            <h3 class="sim-question">Qual tipologia de imóvel você prefere?</h3>
+            <div class="sim-options-grid">
+              <button type="button" class="sim-option-card" data-field="houseType" data-value="Térrea">
+                <strong>🏠 Casa Térrea</strong>
+                <span>Praticidade, integração com área gourmet e pé-direito duplo</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="houseType" data-value="Sobrado">
+                <strong>🏢 Sobrado Imponente</strong>
+                <span>Maior área livre de lazer no térreo e suítes privativas no piso superior</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="houseType" data-value="Geminada">
+                <strong>🏘️ Geminada / Investimento</strong>
+                <span>Otimização inteligente de lote para venda ou locação</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="houseType" data-value="Indiferente">
+                <strong>✨ Quero ver as melhores opções</strong>
+                <span>Avaliar projetos térreos e sobrados do portfólio</span>
+              </button>
+            </div>
+            <div class="sim-footer-nav">
+              <button type="button" class="sim-prev-btn" data-prev="1">&larr; Voltar</button>
+            </div>
+          </div>
+
+          <!-- Step 3: Metragem e Medida do Lote -->
+          <div class="sim-step" data-step="3">
+            <p class="sim-step-counter">Passo 3 de 4 • Dimensões</p>
+            <h3 class="sim-question">Qual a área construída aproximada e medida do lote?</h3>
+            <div class="sim-slider-box">
+              <div class="sim-slider-header">
+                <span>Área Construída Estimada:</span>
+                <strong id="sim-area-display">220 m²</strong>
+              </div>
+              <input type="range" id="sim-area-range" min="100" max="450" step="10" value="220" class="sim-range-input" />
+              <div class="sim-slider-labels">
+                <span>100 m²</span>
+                <span>250 m²</span>
+                <span>450+ m²</span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
+              <label for="sim-lot-input">Medida do seu Lote (Opcional):</label>
+              <input type="text" id="sim-lot-input" placeholder="Ex: 12x25m, 15x30m, 360m²..." />
+            </div>
+
+            <div class="sim-footer-nav">
+              <button type="button" class="sim-prev-btn" data-prev="2">&larr; Voltar</button>
+              <button type="button" id="sim-step3-next" class="submit-btn" style="width: auto; padding: 0.7rem 1.4rem;">Continuar &rarr;</button>
+            </div>
+          </div>
+
+          <!-- Step 4: Escopo -->
+          <div class="sim-step" data-step="4">
+            <p class="sim-step-counter">Passo 4 de 4 • Momento da Obra</p>
+            <h3 class="sim-question">O que você busca contratar neste momento?</h3>
+            <div class="sim-options-grid">
+              <button type="button" class="sim-option-card" data-field="scope" data-value="Projetos + Execução Completa da Obra (Chave na Mão)">
+                <strong>🔑 Obra Completa (Da Planta às Chaves)</strong>
+                <span>Projetos completos + gestão e execução total pela Level Construtora</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="scope" data-value="Apenas Projetos (Arquitetônico 3D + Engenharia)">
+                <strong>📐 Projetos Executivos (Arquitetura + Engenharia)</strong>
+                <span>Fachada 3D, planta humanizada, estrutural, elétrico e hidrossanitário</span>
+              </button>
+              <button type="button" class="sim-option-card" data-field="scope" data-value="Quero entender custos de Projeto e Execução">
+                <strong>💬 Consultoria de Viabilidade e Custos</strong>
+                <span>Quero conversar com um engenheiro/arquiteto para planejar o investimento</span>
+              </button>
+            </div>
+            <div class="sim-footer-nav">
+              <button type="button" class="sim-prev-btn" data-prev="3">&larr; Voltar</button>
+            </div>
+          </div>
+
+          <!-- Step 5: Resultado + Recomendações -->
+          <div class="sim-step" data-step="5">
+            <p class="sim-step-counter">Diagnóstico Concluído</p>
+            <h3 class="sim-question">Seu Perfil de Projeto está Pronto!</h3>
+            <div id="sim-summary-box" class="sim-summary-box"></div>
+
+            <div id="sim-recommendations-wrapper" class="sim-recommendations-wrapper">
+              <p class="menu-section-label">Projetos Compatíveis na Galeria</p>
+              <div id="sim-recommendations-list" class="sim-recommendations-list"></div>
+            </div>
+
+            <a id="sim-whatsapp-cta" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 1.25rem; width: 100%;">
+              Receber Orçamento e Estudo no WhatsApp
+            </a>
+            <div class="sim-footer-nav" style="margin-top: 0.85rem; justify-content: space-between;">
+              <button type="button" id="sim-reset-btn" class="sim-prev-btn">Refazer Simulação</button>
+              <button type="button" id="sim-filter-gallery-btn" class="sim-prev-btn" style="color: #fff;">Ver na Esfera 3D &rarr;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Favorites / Side-by-Side Comparator Overlay -->
+    <div id="compare-overlay" class="admin-overlay" role="dialog" aria-modal="true" aria-labelledby="compare-modal-title">
+      <div class="admin-modal compare-modal">
+        <div class="admin-header">
+          <div>
+            <span class="modal-eyebrow">SELEÇÃO PESSOAL</span>
+            <h2 id="compare-modal-title">Comparar Projetos Favoritos</h2>
+          </div>
+          <button id="close-compare-btn" class="close-btn" type="button" aria-label="Fechar comparador">&times;</button>
+        </div>
+        <div id="compare-grid-container" class="compare-grid-container"></div>
+        <div class="compare-footer">
+          <button type="button" id="clear-compare-btn" class="sim-prev-btn">Limpar Seleção</button>
+          <a id="compare-whatsapp-cta" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 0; width: auto; padding: 0.75rem 1.4rem;">
+            Consultar Especialista sobre Estes Projetos
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen High-Res Lightbox (Fachadas & Plantas Zoom) -->
+    <div id="lightbox-overlay" class="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Visualizador de imagem em tela cheia">
+      <div class="lightbox-topbar">
+        <span id="lightbox-caption" class="lightbox-caption">Imagem</span>
+        <div class="lightbox-actions">
+          <button type="button" id="lightbox-zoom-btn" class="back-btn lightbox-ctrl-btn" aria-label="Alternar Zoom">🔍 Zoom +</button>
+          <button type="button" id="lightbox-close-btn" class="close-btn" aria-label="Fechar tela cheia">&times;</button>
+        </div>
+      </div>
+      <button type="button" id="lightbox-prev-btn" class="lightbox-nav-btn prev" aria-label="Imagem anterior">&#10094;</button>
+      <div id="lightbox-stage" class="lightbox-stage">
+        <img id="lightbox-img" src="" alt="Visualização ampliada" />
+      </div>
+      <button type="button" id="lightbox-next-btn" class="lightbox-nav-btn next" aria-label="Próxima imagem">&#10095;</button>
     </div>
 
     <!-- Social Footer -->
@@ -221,11 +415,17 @@
 
     <div id="canvas-container"></div>
 
+    <!-- Detail Page Overlay -->
     <div id="detail-overlay">
       <div class="detail-header">
-        <button id="back-btn" class="back-btn" type="button">VOLTAR PARA GALERIA</button>
-        <img class="site-logo" src="/images/logo.png" alt="Level Construtora" decoding="async" onerror="this.style.display='none'" onload="this.style.display='block'">
+        <button id="back-btn" class="back-btn" type="button">&larr; VOLTAR PARA GALERIA</button>
+        <div class="detail-header-actions">
+          <button id="detail-fav-btn" class="back-btn detail-action-pill" type="button" title="Salvar para comparar">♡ FAVORITAR</button>
+          <button id="detail-share-btn" class="back-btn detail-action-pill" type="button" title="Compartilhar link direto deste projeto">🔗 COMPARTILHAR</button>
+          <img class="site-logo detail-logo-hide-sm" src="/images/logo.png" alt="Level Construtora" decoding="async" onerror="this.style.display='none'" onload="this.style.display='block'">
+        </div>
       </div>
+
       <div class="detail-content">
         <h1 id="detail-title" class="detail-title">Project Name</h1>
         <p id="detail-subtitle" class="detail-subtitle">Location, Year</p>
@@ -235,21 +435,80 @@
             <div id="detail-specs" class="specs-badges-container"></div>
             <p id="detail-desc"></p>
 
-            <a id="detail-whatsapp-btn" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
-                <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
-              </svg>
-              Solicitar Informações deste Projeto
-            </a>
+            <div class="detail-cta-group">
+              <a id="detail-whatsapp-btn" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+                  <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+                </svg>
+                Solicitar Orçamento deste Projeto
+              </a>
+
+              <a id="detail-adapt-btn" href="#" target="_blank" rel="noopener noreferrer" class="project-adapt-cta">
+                📏 Adaptar esta planta para a medida do meu terreno
+              </a>
+            </div>
 
             <div id="detail-video-wrapper" class="video-embed-wrapper"></div>
           </div>
 
-          <div id="detail-facades-container"></div>
-          <div id="detail-plans-container"></div>
+          <div class="detail-gallery-section">
+            <div class="detail-section-header">
+              <h2>Perspectivas e Fachadas 3D</h2>
+              <span>Toque na imagem para ampliar em tela cheia</span>
+            </div>
+            <div id="detail-facades-container"></div>
+          </div>
+
+          <div id="detail-plans-section" class="detail-gallery-section">
+            <div class="detail-section-header">
+              <h2>Plantas Humanizadas e Layout</h2>
+              <span>Toque na planta para dar zoom nos ambientes</span>
+            </div>
+            <div id="detail-plans-container"></div>
+          </div>
+
+          <!-- High-Conversion Bottom Card after viewing Floor Plans -->
+          <div class="detail-bottom-cta-card">
+            <div class="detail-bottom-cta-text">
+              <span class="modal-eyebrow">GOSTOU DESTA PLANTA?</span>
+              <h3>Construa ou personalize este projeto com a Level Construtora</h3>
+              <p>Nossa equipe de arquitetura e engenharia em Maringá ajusta cada ambiente ao seu terreno, estilo de vida e orçamento — do projeto executivo à entrega das chaves.</p>
+            </div>
+            <div class="detail-bottom-cta-actions">
+              <a id="detail-bottom-whatsapp-btn" href="#" target="_blank" rel="noopener noreferrer" class="project-whatsapp-cta" style="margin-top: 0;">
+                Falar com Engenheiro / Arquiteto Agora
+              </a>
+              <button type="button" id="detail-open-simulator-btn" class="back-btn">
+                Simular Custos e Viabilidade
+              </button>
+            </div>
+          </div>
+
+          <!-- Sequential Project Navigation -->
+          <div class="detail-project-nav">
+            <button type="button" id="prev-project-btn" class="detail-nav-card">
+              <span class="nav-dir">&larr; Projeto Anterior</span>
+              <strong id="prev-project-title">-</strong>
+            </button>
+            <button type="button" id="next-project-btn" class="detail-nav-card align-right">
+              <span class="nav-dir">Próximo Projeto &rarr;</span>
+              <strong id="next-project-title">-</strong>
+            </button>
+          </div>
         </div>
+      </div>
+
+      <!-- Sticky Mobile Bottom Bar inside Detail View -->
+      <div id="detail-sticky-bar" class="detail-sticky-bar">
+        <div class="sticky-bar-info">
+          <strong id="sticky-bar-title">Projeto</strong>
+          <span id="sticky-bar-lot">Lote</span>
+        </div>
+        <a id="sticky-bar-whatsapp" href="#" target="_blank" rel="noopener noreferrer" class="sticky-whatsapp-btn">
+          Orçar no WhatsApp
+        </a>
       </div>
     </div>
   </div>
