@@ -223,9 +223,7 @@ const clearGallery = () => {
 };
 
 const computeCardSphericalCoords = (index, count) => {
-  // O primeiro item (index === 0) é sempre ancorado exatamente no centro frontal (phi = PI/2, theta = PI)
-  // garantindo que em (X = 0, Y = 0) o card principal esteja 100% centralizado na tela.
-  if (count <= 1 || index === 0) {
+  if (count <= 1) {
     return { phi: Math.PI / 2, theta: Math.PI };
   }
 
@@ -236,11 +234,18 @@ const computeCardSphericalCoords = (index, count) => {
     };
   }
 
+  // Ancora o primeiro projeto (index === 0) no slot central da espiral (k = 0 -> phi = PI/2, theta = PI)
+  // e distribui os demais projetos nos slots restantes sem colisão espacial.
+  const mid = Math.floor((count - 1) / 2);
+  const slot = index === 0 ? mid : (index <= mid ? index - 1 : index);
+  const k = slot - mid;
+  const maxHalfSpan = Math.max(1, mid, count - 1 - mid);
+
   const maxVerticalSpread = Math.min(0.68, count * 0.075);
-  const h = -maxVerticalSpread + (2 * maxVerticalSpread * index) / (count - 1);
+  const h = (k / maxHalfSpan) * maxVerticalSpread;
   const phi = Math.acos(h);
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  const theta = Math.PI + index * Math.max(goldenAngle, (2 * Math.PI) / Math.min(count, 8));
+  const theta = Math.PI + k * goldenAngle;
 
   return { phi, theta };
 };
@@ -740,6 +745,8 @@ const createMenuButton = (label, isActive, onClick) => {
   return btn;
 };
 
+const normalizeLotSize = (value) => (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
 if (openSearchBtn && searchOverlay && searchOptionsContainer) {
   openSearchBtn.addEventListener('click', () => {
     trackEvent('abrir_filtro_projetos');
@@ -748,8 +755,7 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
       history.pushState({ view: 'search' }, '', '#pesquisa');
     }
 
-    const sizes = [...new Set(allProjects.map(p => p.lotSize).filter(Boolean))];
-    const types = [...new Set(allProjects.map(p => p.houseType).filter(Boolean))];
+    const sizes = [...new Set(allProjects.map(p => normalizeLotSize(p.lotSize)).filter(Boolean))];
     searchOptionsContainer.innerHTML = '';
 
     const fragment = document.createDocumentFragment();
@@ -761,25 +767,7 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
       })
     );
 
-    // Opção 2: Filtro por Tipo de Imóvel
-    if (types.length > 0) {
-      const typeLabel = document.createElement('p');
-      typeLabel.className = 'menu-section-label';
-      typeLabel.innerText = 'Por Tipo de Imóvel';
-      fragment.appendChild(typeLabel);
-
-      types.forEach(t => {
-        const filterKey = `type:${t}`;
-        fragment.appendChild(
-          createMenuButton(t, currentFilter === filterKey, () => {
-            const filtered = allProjects.filter(p => p.houseType === t);
-            applyMenuFilterAndFocus(filterKey, filtered);
-          })
-        );
-      });
-    }
-
-    // Opção 3: Filtro por Medida de Lote
+    // Opção 2: Filtro por Medida de Lote
     if (sizes.length > 0) {
       const sizeLabel = document.createElement('p');
       sizeLabel.className = 'menu-section-label';
@@ -789,43 +777,8 @@ if (openSearchBtn && searchOverlay && searchOptionsContainer) {
       sizes.forEach(size => {
         fragment.appendChild(
           createMenuButton(`Lote ${size}`, currentFilter === size, () => {
-            const filtered = allProjects.filter(p => p.lotSize === size);
+            const filtered = allProjects.filter(p => normalizeLotSize(p.lotSize) === size);
             applyMenuFilterAndFocus(size, filtered);
-          })
-        );
-      });
-    }
-
-    // Opção 4: Navegação Direta para Projetos na Galeria (foca exatamente nas coordenadas X,Y do card com zoom = 1)
-    if (allProjects.length > 0) {
-      const projectsLabel = document.createElement('p');
-      projectsLabel.className = 'menu-section-label';
-      projectsLabel.innerText = 'Ir Direto para o Projeto';
-      fragment.appendChild(projectsLabel);
-
-      allProjects.forEach(proj => {
-        const titleText = proj.lotSize ? `${proj.title} (${proj.lotSize})` : (proj.title || 'Projeto');
-        const filterKey = `project:${proj.id || proj.title}`;
-        fragment.appendChild(
-          createMenuButton(titleText, currentFilter === filterKey, () => {
-            currentFilter = filterKey;
-            // Se um filtro anterior ocultou este card, restaura todos os projetos antes de focar
-            let targetCard = cards.find(c => c.userData && (c.userData.id === proj.id && c.userData.title === proj.title));
-            if (!targetCard) {
-              buildGallery(allProjects, { resetCamera: false });
-              const projIndex = allProjects.findIndex(p => p.id === proj.id && p.title === proj.title);
-              const { phi, theta } = computeCardSphericalCoords(Math.max(0, projIndex), allProjects.length);
-              focusCameraAt({
-                x: phi - Math.PI / 2,
-                y: Math.PI - theta,
-                zoom: 1,
-                duration: 1.2
-              });
-            } else {
-              const { x, y } = targetCard.userData.anchorCoords || { x: 0, y: 0 };
-              focusCameraAt({ x, y, zoom: 1, duration: 1.2 });
-            }
-            closeSearchMenu();
           })
         );
       });
