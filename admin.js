@@ -46,6 +46,32 @@ const currentFaviconPreviewDark = document.getElementById('current-favicon-previ
 const faviconStatusBadge = document.getElementById('favicon-status-badge');
 const adminFaviconLink = document.getElementById('admin-favicon');
 
+const watermarkPanel = document.getElementById('watermark-panel');
+const watermarkActivePill = document.getElementById('watermark-active-pill');
+const watermarkLogoThumb = document.getElementById('watermark-logo-thumb');
+const watermarkSourceBadge = document.getElementById('watermark-source-badge');
+const deleteWatermarkBtn = document.getElementById('delete-watermark-btn');
+const watermarkLogoForm = document.getElementById('watermark-logo-form');
+const formWatermarkLogo = document.getElementById('form-watermark-logo');
+const submitWatermarkLogoBtn = document.getElementById('submit-watermark-logo-btn');
+
+const watermarkSettingsForm = document.getElementById('watermark-settings-form');
+const watermarkEnabledCheckbox = document.getElementById('watermark-enabled-checkbox');
+const watermarkOpacityRange = document.getElementById('watermark-opacity-range');
+const watermarkOpacityBadge = document.getElementById('watermark-opacity-badge');
+const watermarkSizeRange = document.getElementById('watermark-size-range');
+const watermarkSizeBadge = document.getElementById('watermark-size-badge');
+const submitWatermarkSettingsBtn = document.getElementById('submit-watermark-settings-btn');
+
+const watermarkPreviewSampleBg = document.getElementById('watermark-preview-sample-bg');
+const watermarkPreviewLogoImg = document.getElementById('watermark-preview-logo-img');
+const previewTabFacade = document.getElementById('preview-tab-facade');
+const previewTabPlan = document.getElementById('preview-tab-plan');
+const applyWatermarkExistingBtn = document.getElementById('apply-watermark-existing-btn');
+
+const projectWatermarkStatus = document.getElementById('project-watermark-status');
+const projectWatermarkStatusText = document.getElementById('project-watermark-status-text');
+
 const settingsForm = document.getElementById('settings-form');
 const formInstagram = document.getElementById('form-instagram');
 const formInstagramEnabled = document.getElementById('form-instagram-enabled');
@@ -121,11 +147,31 @@ export function unpackProjectMeta(project) {
   };
 }
 
+function loadImageAsync(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
 /**
- * Comprime e redimensiona imagens pesadas (ex: renders 4K PNG/JPG) para WebP otimizado
- * direto no navegador antes do upload, acelerando o carregamento da Galeria 3D em até 80%.
+ * Comprime, redimensiona e estampa a marca d'água no centro exato da imagem
+ * com o tamanho e transparência configurados pelo usuário no painel /admin.
  */
-async function compressImageToWebP(file, maxDimension = 1920, quality = 0.86) {
+async function processImageWithWatermark(file, options = {}) {
+  const {
+    maxDimension = 1920,
+    quality = 0.86,
+    watermarkImg = null,
+    watermarkEnabled = false,
+    watermarkOpacity = 35,
+    watermarkSize = 35
+  } = options;
+
   if (!file || !file.type || !file.type.startsWith('image/') || file.type === 'image/svg+xml') {
     return file;
   }
@@ -154,9 +200,33 @@ async function compressImageToWebP(file, maxDimension = 1920, quality = 0.86) {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
+        // Estampa a marca d'água bem no meio da imagem
+        if (watermarkEnabled && watermarkImg && watermarkImg.naturalWidth && watermarkImg.naturalHeight) {
+          const targetW = width * (Math.max(5, Math.min(100, watermarkSize)) / 100);
+          const aspect = watermarkImg.naturalWidth / watermarkImg.naturalHeight;
+          let logoW = targetW;
+          let logoH = targetW / aspect;
+
+          // Se a altura proporcional exceder o limite vertical
+          const maxAllowedH = height * (Math.max(5, Math.min(100, watermarkSize)) / 100);
+          if (logoH > maxAllowedH) {
+            logoH = maxAllowedH;
+            logoW = logoH * aspect;
+          }
+
+          // Posicionamento centralizado perfeito (X e Y)
+          const posX = (width - logoW) / 2;
+          const posY = (height - logoH) / 2;
+
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, Math.min(1, watermarkOpacity / 100));
+          ctx.drawImage(watermarkImg, posX, posY, logoW, logoH);
+          ctx.restore();
+        }
+
         canvas.toBlob(
           (blob) => {
-            if (!blob || blob.size >= file.size) {
+            if (!blob) {
               resolve(file);
               return;
             }
@@ -182,6 +252,10 @@ async function compressImageToWebP(file, maxDimension = 1920, quality = 0.86) {
 
     img.src = objectUrl;
   });
+}
+
+async function compressImageToWebP(file, maxDimension = 1920, quality = 0.86) {
+  return processImageWithWatermark(file, { maxDimension, quality, watermarkEnabled: false });
 }
 
 function handleUnauthorized() {
@@ -213,6 +287,66 @@ function reloadFaviconPreview(hasCustomFavicon = false) {
   }
 }
 
+function updateProjectWatermarkStatus(isEnabled, opacity, size) {
+  if (!projectWatermarkStatusText) return;
+  if (isEnabled) {
+    projectWatermarkStatusText.innerText = `Marca d'água ativa: As novas fachadas e plantas cadastradas receberão a logo centralizada automaticamente (${size}% do tamanho da imagem, ${opacity}% de transparência).`;
+    if (projectWatermarkStatus) {
+      projectWatermarkStatus.style.borderColor = 'rgba(229, 193, 88, 0.4)';
+      projectWatermarkStatus.style.color = '#f8e3a1';
+    }
+  } else {
+    projectWatermarkStatusText.innerText = 'Marca d\'água pausada: As novas imagens cadastradas não receberão a logo sobreposta.';
+    if (projectWatermarkStatus) {
+      projectWatermarkStatus.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+      projectWatermarkStatus.style.color = '#888';
+    }
+  }
+}
+
+function reloadWatermarkUI(settings = {}) {
+  const isEnabled = settings.watermarkEnabled !== false;
+  const opacity = typeof settings.watermarkOpacity === 'number' ? settings.watermarkOpacity : 35;
+  const size = typeof settings.watermarkSize === 'number' ? settings.watermarkSize : 35;
+  const hasCustomLogo = Boolean(settings.hasWatermarkLogo);
+  const watermarkUrl = `/images/watermark.png?t=${Date.now()}`;
+
+  if (watermarkEnabledCheckbox) watermarkEnabledCheckbox.checked = isEnabled;
+  if (watermarkOpacityRange) watermarkOpacityRange.value = opacity;
+  if (watermarkOpacityBadge) watermarkOpacityBadge.innerText = `${opacity}%`;
+  if (watermarkSizeRange) watermarkSizeRange.value = size;
+  if (watermarkSizeBadge) watermarkSizeBadge.innerText = `${size}%`;
+
+  if (watermarkActivePill) {
+    watermarkActivePill.innerText = isEnabled ? 'Ativa' : 'Desativada';
+    watermarkActivePill.style.background = isEnabled ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)';
+    watermarkActivePill.style.color = isEnabled ? '#86efac' : '#888';
+    watermarkActivePill.style.borderColor = isEnabled ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.2)';
+  }
+
+  if (watermarkLogoThumb) {
+    watermarkLogoThumb.src = watermarkUrl;
+  }
+
+  if (watermarkPreviewLogoImg) {
+    watermarkPreviewLogoImg.src = watermarkUrl;
+    watermarkPreviewLogoImg.style.opacity = isEnabled ? (opacity / 100) : '0.15';
+    watermarkPreviewLogoImg.style.width = `${size}%`;
+  }
+
+  if (watermarkSourceBadge) {
+    watermarkSourceBadge.innerText = hasCustomLogo
+      ? '✨ Logo personalizada de marca d\'água ativa'
+      : 'Usando o logotipo padrão do site como marca d\'água';
+  }
+
+  if (deleteWatermarkBtn) {
+    deleteWatermarkBtn.style.display = hasCustomLogo ? 'inline-block' : 'none';
+  }
+
+  updateProjectWatermarkStatus(isEnabled, opacity, size);
+}
+
 async function fetchSettings() {
   try {
     const res = await fetch(`/api/settings?t=${Date.now()}`, { cache: 'no-store' });
@@ -237,6 +371,7 @@ async function fetchSettings() {
 
     reloadLogoPreview(data.hasLogo !== false);
     reloadFaviconPreview(Boolean(data.hasFavicon));
+    reloadWatermarkUI(data);
   } catch (err) {
     console.error('Erro ao carregar configurações:', err);
   }
@@ -537,14 +672,37 @@ if (adminForm) {
       const facadeFiles = formFacade ? Array.from(formFacade.files || []) : [];
       const planFiles = formPlan ? Array.from(formPlan.files || []) : [];
 
+      const isWatermarkOn = Boolean(watermarkEnabledCheckbox ? watermarkEnabledCheckbox.checked : (cachedSettings.watermarkEnabled !== false));
+      const watermarkOp = watermarkOpacityRange ? Number(watermarkOpacityRange.value) : (cachedSettings.watermarkOpacity ?? 35);
+      const watermarkSz = watermarkSizeRange ? Number(watermarkSizeRange.value) : (cachedSettings.watermarkSize ?? 35);
+
+      let watermarkLogoImg = null;
+      if (isWatermarkOn && (facadeFiles.length > 0 || planFiles.length > 0)) {
+        watermarkLogoImg = await loadImageAsync(`/images/watermark.png?t=${Date.now()}`);
+      }
+
       for (const file of facadeFiles) {
-        const optimized = await compressImageToWebP(file, 1920, 0.86);
+        const optimized = await processImageWithWatermark(file, {
+          maxDimension: 1920,
+          quality: 0.86,
+          watermarkImg: watermarkLogoImg,
+          watermarkEnabled: isWatermarkOn,
+          watermarkOpacity: watermarkOp,
+          watermarkSize: watermarkSz
+        });
         formData.append('facades', optimized);
       }
 
       for (const file of planFiles) {
         // Plantas humanizadas recebem resolução maior (2400px) para leitura nítida de cotas no zoom
-        const optimized = await compressImageToWebP(file, 2400, 0.9);
+        const optimized = await processImageWithWatermark(file, {
+          maxDimension: 2400,
+          quality: 0.90,
+          watermarkImg: watermarkLogoImg,
+          watermarkEnabled: isWatermarkOn,
+          watermarkOpacity: watermarkOp,
+          watermarkSize: watermarkSz
+        });
         formData.append('plans', optimized);
       }
 
@@ -695,6 +853,283 @@ if (deleteFaviconBtn) {
     } finally {
       deleteFaviconBtn.innerText = originalBtnText;
       deleteFaviconBtn.disabled = false;
+    }
+  });
+}
+
+/* ==========================================================================
+   CONFIGURAÇÃO DE MARCA D'ÁGUA (TRANSPARÊNCIA, TAMANHO E LOGO CENTRALIZADA)
+   ========================================================================== */
+if (watermarkOpacityRange) {
+  watermarkOpacityRange.addEventListener('input', (e) => {
+    const val = Number(e.target.value);
+    if (watermarkOpacityBadge) watermarkOpacityBadge.innerText = `${val}%`;
+    if (watermarkPreviewLogoImg) {
+      const isEn = watermarkEnabledCheckbox ? watermarkEnabledCheckbox.checked : true;
+      watermarkPreviewLogoImg.style.opacity = isEn ? String(val / 100) : '0.15';
+    }
+    const curSize = watermarkSizeRange ? Number(watermarkSizeRange.value) : 35;
+    const isEn = watermarkEnabledCheckbox ? watermarkEnabledCheckbox.checked : true;
+    updateProjectWatermarkStatus(isEn, val, curSize);
+  });
+}
+
+if (watermarkSizeRange) {
+  watermarkSizeRange.addEventListener('input', (e) => {
+    const val = Number(e.target.value);
+    if (watermarkSizeBadge) watermarkSizeBadge.innerText = `${val}%`;
+    if (watermarkPreviewLogoImg) {
+      watermarkPreviewLogoImg.style.width = `${val}%`;
+    }
+    const curOp = watermarkOpacityRange ? Number(watermarkOpacityRange.value) : 35;
+    const isEn = watermarkEnabledCheckbox ? watermarkEnabledCheckbox.checked : true;
+    updateProjectWatermarkStatus(isEn, curOp, val);
+  });
+}
+
+if (watermarkEnabledCheckbox) {
+  watermarkEnabledCheckbox.addEventListener('change', (e) => {
+    const isEn = e.target.checked;
+    const curOp = watermarkOpacityRange ? Number(watermarkOpacityRange.value) : 35;
+    const curSize = watermarkSizeRange ? Number(watermarkSizeRange.value) : 35;
+
+    if (watermarkActivePill) {
+      watermarkActivePill.innerText = isEn ? 'Ativa' : 'Desativada';
+      watermarkActivePill.style.background = isEn ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)';
+      watermarkActivePill.style.color = isEn ? '#86efac' : '#888';
+      watermarkActivePill.style.borderColor = isEn ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.2)';
+    }
+
+    if (watermarkPreviewLogoImg) {
+      watermarkPreviewLogoImg.style.opacity = isEn ? String(curOp / 100) : '0.15';
+    }
+
+    updateProjectWatermarkStatus(isEn, curOp, curSize);
+  });
+}
+
+if (previewTabFacade && previewTabPlan && watermarkPreviewSampleBg) {
+  previewTabFacade.addEventListener('click', () => {
+    previewTabFacade.classList.add('active');
+    previewTabPlan.classList.remove('active');
+    watermarkPreviewSampleBg.src = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80';
+  });
+
+  previewTabPlan.addEventListener('click', () => {
+    previewTabPlan.classList.add('active');
+    previewTabFacade.classList.remove('active');
+    watermarkPreviewSampleBg.src = 'https://images.unsplash.com/photo-1574362848149-11496d93a7c7?auto=format&fit=crop&w=1200&q=80';
+  });
+}
+
+if (watermarkLogoForm) {
+  watermarkLogoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!formWatermarkLogo || !formWatermarkLogo.files || !formWatermarkLogo.files.length) return;
+
+    const formData = new FormData();
+    formData.append('watermark', formWatermarkLogo.files[0]);
+
+    const originalBtnText = submitWatermarkLogoBtn ? submitWatermarkLogoBtn.innerText : 'Salvar';
+    if (submitWatermarkLogoBtn) {
+      submitWatermarkLogoBtn.innerText = 'Salvando logo...';
+      submitWatermarkLogoBtn.disabled = true;
+    }
+
+    try {
+      const res = await fetch('/api/watermark/logo', {
+        method: 'POST',
+        headers: { 'Authorization': localStorage.getItem('adminToken') },
+        body: formData
+      });
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) throw new Error('Falha no upload da logo de marca d\'água');
+
+      alert('Logo da marca d\'água salva e atualizada com sucesso!');
+      watermarkLogoForm.reset();
+      await fetchSettings();
+    } catch (err) {
+      console.error(err);
+      alert('Falha ao enviar logo da marca d\'água.');
+    } finally {
+      if (submitWatermarkLogoBtn) {
+        submitWatermarkLogoBtn.innerText = originalBtnText;
+        submitWatermarkLogoBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (deleteWatermarkBtn) {
+  deleteWatermarkBtn.addEventListener('click', async () => {
+    if (!confirm('Deseja remover a logo personalizada da marca d\'água e voltar a usar a logo padrão do site?')) return;
+
+    const originalBtnText = deleteWatermarkBtn.innerText;
+    deleteWatermarkBtn.innerText = 'Removendo...';
+    deleteWatermarkBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/watermark/logo', {
+        method: 'DELETE',
+        headers: { 'Authorization': localStorage.getItem('adminToken') }
+      });
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) throw new Error('Falha ao remover marca d\'água');
+
+      alert('Logo personalizada removida! O sistema voltou a usar o logotipo padrão do site nas fotos.');
+      await fetchSettings();
+    } catch (err) {
+      alert('Falha ao restaurar logo padrão.');
+    } finally {
+      deleteWatermarkBtn.innerText = originalBtnText;
+      deleteWatermarkBtn.disabled = false;
+    }
+  });
+}
+
+if (watermarkSettingsForm) {
+  watermarkSettingsForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const originalBtnText = submitWatermarkSettingsBtn ? submitWatermarkSettingsBtn.innerText : 'Salvar Configurações';
+    if (submitWatermarkSettingsBtn) {
+      submitWatermarkSettingsBtn.innerText = 'Salvando...';
+      submitWatermarkSettingsBtn.disabled = true;
+    }
+
+    try {
+      const payload = {
+        ...cachedSettings,
+        watermarkEnabled: watermarkEnabledCheckbox ? Boolean(watermarkEnabledCheckbox.checked) : true,
+        watermarkOpacity: watermarkOpacityRange ? Number(watermarkOpacityRange.value) : 35,
+        watermarkSize: watermarkSizeRange ? Number(watermarkSizeRange.value) : 35
+      };
+
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': localStorage.getItem('adminToken')
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.status === 401 || res.status === 403) return handleUnauthorized();
+      if (!res.ok) throw new Error('Falha ao salvar');
+
+      alert('Configurações de marca d\'água (transparência e tamanho) salvas com sucesso!');
+      await fetchSettings();
+    } catch (err) {
+      alert('Falha ao salvar configurações da marca d\'água.');
+    } finally {
+      if (submitWatermarkSettingsBtn) {
+        submitWatermarkSettingsBtn.innerText = originalBtnText;
+        submitWatermarkSettingsBtn.disabled = false;
+      }
+    }
+  });
+}
+
+if (applyWatermarkExistingBtn) {
+  applyWatermarkExistingBtn.addEventListener('click', async () => {
+    if (!cachedProjects || cachedProjects.length === 0) {
+      return alert('Nenhum projeto cadastrado no momento para processar.');
+    }
+
+    if (!confirm(`Deseja aplicar a marca d'água em todas as imagens dos ${cachedProjects.length} projetos já cadastrados? Esta ação reprocessará fachadas e plantas aplicando a logo centralizada com o tamanho e transparência configurados.`)) {
+      return;
+    }
+
+    const originalText = applyWatermarkExistingBtn.innerText;
+    applyWatermarkExistingBtn.disabled = true;
+
+    try {
+      const watermarkLogoImg = await loadImageAsync(`/images/watermark.png?t=${Date.now()}`);
+      if (!watermarkLogoImg || !watermarkLogoImg.naturalWidth) {
+        throw new Error('Não foi possível carregar a imagem da logo. Certifique-se de que há uma logo do site ou logo de marca d\'água cadastrada.');
+      }
+
+      const opacity = watermarkOpacityRange ? Number(watermarkOpacityRange.value) : (cachedSettings.watermarkOpacity ?? 35);
+      const size = watermarkSizeRange ? Number(watermarkSizeRange.value) : (cachedSettings.watermarkSize ?? 35);
+
+      for (let i = 0; i < cachedProjects.length; i++) {
+        const project = cachedProjects[i];
+        applyWatermarkExistingBtn.innerText = `Processando ${i + 1}/${cachedProjects.length}: ${project.title}...`;
+
+        const formData = new FormData();
+        formData.append('title', project.title || '');
+        formData.append('subtitle', project.subtitle || '');
+        formData.append('lotSize', project.lotSize || '');
+        formData.append('houseType', project.houseType || 'Térrea');
+        formData.append('desc', project.desc || '');
+        formData.append('area', project.area || '');
+        formData.append('bedrooms', project.bedrooms || '');
+        formData.append('garage', project.garage || '');
+        formData.append('status', project.status || 'Projeto Exclusivo');
+        formData.append('videoUrl', project.videoUrl || '');
+        formData.append('visible', String(project.visible !== false));
+        formData.append('order', String(project.order || 0));
+
+        const facades = project.facades || (project.facade ? [project.facade] : []);
+        for (const fUrl of facades) {
+          try {
+            const resp = await fetch(fUrl, { cache: 'no-store' });
+            if (resp.ok) {
+              const blob = await resp.blob();
+              const file = new File([blob], 'facade.webp', { type: blob.type || 'image/webp' });
+              const stamped = await processImageWithWatermark(file, {
+                maxDimension: 1920,
+                quality: 0.86,
+                watermarkImg: watermarkLogoImg,
+                watermarkEnabled: true,
+                watermarkOpacity: opacity,
+                watermarkSize: size
+              });
+              formData.append('facades', stamped);
+            }
+          } catch (e) {
+            console.warn('Erro ao processar imagem de fachada:', e);
+          }
+        }
+
+        const plans = project.plans || (project.plan ? [project.plan] : []);
+        for (const pUrl of plans) {
+          try {
+            const resp = await fetch(pUrl, { cache: 'no-store' });
+            if (resp.ok) {
+              const blob = await resp.blob();
+              const file = new File([blob], 'plan.webp', { type: blob.type || 'image/webp' });
+              const stamped = await processImageWithWatermark(file, {
+                maxDimension: 2400,
+                quality: 0.90,
+                watermarkImg: watermarkLogoImg,
+                watermarkEnabled: true,
+                watermarkOpacity: opacity,
+                watermarkSize: size
+              });
+              formData.append('plans', stamped);
+            }
+          } catch (e) {
+            console.warn('Erro ao processar imagem de planta:', e);
+          }
+        }
+
+        const putRes = await fetch(`/api/projects/${project.id}`, {
+          method: 'PUT',
+          headers: { 'Authorization': localStorage.getItem('adminToken') },
+          body: formData
+        });
+
+        if (putRes.status === 401 || putRes.status === 403) return handleUnauthorized();
+      }
+
+      alert('Todas as fotos e plantas dos projetos antigos foram reprocessadas e atualizadas com sucesso com a marca d\'água!');
+      await fetchAdminProjects();
+    } catch (err) {
+      console.error('Erro ao reprocessar projetos:', err);
+      alert(`Falha ao aplicar marca d'água: ${err.message}`);
+    } finally {
+      applyWatermarkExistingBtn.innerText = originalText;
+      applyWatermarkExistingBtn.disabled = false;
     }
   });
 }

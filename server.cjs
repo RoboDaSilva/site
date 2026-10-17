@@ -106,7 +106,14 @@ const DEFAULT_SETTINGS = {
   hasFavicon: fs.existsSync(path.join(IMAGES_DIR, 'favicon.png')),
   faviconMimeType: 'image/png',
   faviconDataBase64: null,
-  faviconUpdatedAt: Date.now()
+  faviconUpdatedAt: Date.now(),
+  hasWatermarkLogo: fs.existsSync(path.join(IMAGES_DIR, 'watermark.png')),
+  watermarkMimeType: 'image/png',
+  watermarkDataBase64: null,
+  watermarkUpdatedAt: Date.now(),
+  watermarkEnabled: true,
+  watermarkOpacity: 35,
+  watermarkSize: 35
 };
 
 if (!fs.existsSync(SETTINGS_FILE)) {
@@ -189,6 +196,42 @@ app.get('/images/favicon.png', (req, res) => {
   }
 
   // Fallback para a logo caso nenhum favicon personalizado esteja definido
+  if (settings.hasLogo !== false) {
+    if (settings.logoDataBase64) {
+      const imgBuffer = Buffer.from(settings.logoDataBase64, 'base64');
+      res.set('Content-Type', settings.logoMimeType || 'image/png');
+      return res.send(imgBuffer);
+    }
+    const diskLogo = path.join(IMAGES_DIR, 'logo.png');
+    if (fs.existsSync(diskLogo)) {
+      return res.sendFile(diskLogo);
+    }
+  }
+
+  return res.status(404).end();
+});
+
+app.get('/images/watermark.png', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+
+  const settings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+
+  // 1. Logo específica de marca d'água
+  if (settings.hasWatermarkLogo) {
+    if (settings.watermarkDataBase64) {
+      const imgBuffer = Buffer.from(settings.watermarkDataBase64, 'base64');
+      res.set('Content-Type', settings.watermarkMimeType || 'image/png');
+      return res.send(imgBuffer);
+    }
+    const diskWatermark = path.join(IMAGES_DIR, 'watermark.png');
+    if (fs.existsSync(diskWatermark)) {
+      return res.sendFile(diskWatermark);
+    }
+  }
+
+  // 2. Fallback para a logo do site
   if (settings.hasLogo !== false) {
     if (settings.logoDataBase64) {
       const imgBuffer = Buffer.from(settings.logoDataBase64, 'base64');
@@ -561,12 +604,72 @@ app.delete('/api/favicon', requireAuth, (req, res) => {
   }
 });
 
+app.post('/api/watermark/logo', requireAuth, upload.single('watermark'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
+  try {
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const mimeType = req.file.mimetype || 'image/png';
+    const targetPath = path.join(IMAGES_DIR, 'watermark.png');
+
+    fs.writeFileSync(targetPath, fileBuffer);
+    if (fs.existsSync(req.file.path) && req.file.path !== targetPath) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    const currentSettings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+    const updatedSettings = {
+      ...currentSettings,
+      hasWatermarkLogo: true,
+      watermarkMimeType: mimeType,
+      watermarkDataBase64: fileBuffer.toString('base64'),
+      watermarkUpdatedAt: Date.now()
+    };
+    writeJsonSafe(SETTINGS_FILE, updatedSettings);
+
+    return res.json({
+      success: true,
+      url: `/images/watermark.png?t=${updatedSettings.watermarkUpdatedAt}`
+    });
+  } catch (err) {
+    console.error('Erro ao salvar logo de marca d\'água:', err);
+    return res.status(500).json({ error: 'Erro ao processar imagem de marca d\'água' });
+  }
+});
+
+app.delete('/api/watermark/logo', requireAuth, (req, res) => {
+  try {
+    const targetPath = path.join(IMAGES_DIR, 'watermark.png');
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+
+    const currentSettings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+    const updatedSettings = {
+      ...currentSettings,
+      hasWatermarkLogo: false,
+      watermarkDataBase64: null,
+      watermarkUpdatedAt: Date.now()
+    };
+    writeJsonSafe(SETTINGS_FILE, updatedSettings);
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao deletar marca d\'água:', err);
+    return res.status(500).json({ error: 'Erro ao remover marca d\'água' });
+  }
+});
+
 app.get('/api/settings', (req, res) => {
   const s = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
   const diskLogoExists = fs.existsSync(path.join(IMAGES_DIR, 'logo.png'));
   const hasLogo = s.hasLogo !== undefined ? Boolean(s.hasLogo) : diskLogoExists;
   const diskFaviconExists = fs.existsSync(path.join(IMAGES_DIR, 'favicon.png'));
   const hasFavicon = s.hasFavicon !== undefined ? Boolean(s.hasFavicon) : diskFaviconExists;
+  const diskWatermarkExists = fs.existsSync(path.join(IMAGES_DIR, 'watermark.png'));
+  const hasWatermarkLogo = s.hasWatermarkLogo !== undefined ? Boolean(s.hasWatermarkLogo) : diskWatermarkExists;
 
   res.json({
     instagram: s.instagram || '',
@@ -583,13 +686,24 @@ app.get('/api/settings', (req, res) => {
     hasLogo,
     logoUpdatedAt: s.logoUpdatedAt || Date.now(),
     hasFavicon,
-    faviconUpdatedAt: s.faviconUpdatedAt || Date.now()
+    faviconUpdatedAt: s.faviconUpdatedAt || Date.now(),
+    hasWatermarkLogo,
+    watermarkUpdatedAt: s.watermarkUpdatedAt || Date.now(),
+    watermarkEnabled: toBool(s.watermarkEnabled, true),
+    watermarkOpacity: typeof s.watermarkOpacity === 'number' ? s.watermarkOpacity : (parseInt(s.watermarkOpacity, 10) || 35),
+    watermarkSize: typeof s.watermarkSize === 'number' ? s.watermarkSize : (parseInt(s.watermarkSize, 10) || 35)
   });
 });
 
 app.post('/api/settings', requireAuth, (req, res) => {
   const body = req.body || {};
   const currentSettings = readJsonSafe(SETTINGS_FILE, DEFAULT_SETTINGS);
+
+  const opacityNum = Number(body.watermarkOpacity);
+  const safeOpacity = isNaN(opacityNum) ? (currentSettings.watermarkOpacity ?? 35) : Math.max(0, Math.min(100, Math.round(opacityNum)));
+
+  const sizeNum = Number(body.watermarkSize);
+  const safeSize = isNaN(sizeNum) ? (currentSettings.watermarkSize ?? 35) : Math.max(5, Math.min(100, Math.round(sizeNum)));
 
   const updatedSettings = {
     ...currentSettings,
@@ -603,7 +717,10 @@ app.post('/api/settings', requireAuth, (req, res) => {
     whatsappEnabled: toBool(body.whatsappEnabled, true),
     whatsappMsg: String(body.whatsappMsg || '').trim(),
     address: String(body.address || '').trim(),
-    projectMeta: body.projectMeta || currentSettings.projectMeta || {}
+    projectMeta: body.projectMeta || currentSettings.projectMeta || {},
+    watermarkEnabled: toBool(body.watermarkEnabled, true),
+    watermarkOpacity: safeOpacity,
+    watermarkSize: safeSize
   };
 
   writeJsonSafe(SETTINGS_FILE, updatedSettings);

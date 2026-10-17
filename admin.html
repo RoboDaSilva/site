@@ -43,6 +43,15 @@
       .edit-banner { display: none; background: rgba(37, 99, 235, 0.18); border: 1px solid #3b82f6; color: #93c5fd; padding: 0.85rem 1rem; border-radius: 0.5rem; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; }
       .edit-file-hint { display: none; font-size: 0.78rem; color: #e5c158; margin-top: 0.35rem; }
       .center-badge { background: rgba(229, 193, 88, 0.2); border: 1px solid rgba(229, 193, 88, 0.5); color: #f8e3a1; padding: 0.15rem 0.55rem; border-radius: 0.3rem; font-size: 0.72rem; font-weight: 600; }
+      .range-wrapper { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+      .range-input { flex: 1; accent-color: #e5c158; cursor: pointer; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.15); }
+      .range-badge { background: rgba(229, 193, 88, 0.15); border: 1px solid rgba(229, 193, 88, 0.4); color: #f8e3a1; padding: 0.35rem 0.75rem; border-radius: 0.4rem; font-size: 0.85rem; font-weight: 700; min-width: 60px; text-align: center; }
+      .watermark-preview-card { position: relative; width: 100%; aspect-ratio: 16/9; max-height: 380px; border-radius: 0.75rem; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); background: #111; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.6); }
+      .watermark-preview-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.9; }
+      .watermark-preview-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-height: 85%; object-fit: contain; pointer-events: none; transition: opacity 0.15s ease, width 0.15s ease; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+      .preview-tab-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: #ccc; padding: 0.35rem 0.75rem; border-radius: 0.35rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+      .preview-tab-btn.active { background: #e5c158; border-color: #e5c158; color: #000; }
+      .watermark-status-banner { background: rgba(229, 193, 88, 0.1); border: 1px solid rgba(229, 193, 88, 0.3); color: #f8e3a1; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-top: 0.75rem; font-size: 0.82rem; display: flex; align-items: center; gap: 0.5rem; }
     </style>
   </head>
   <body>
@@ -163,6 +172,13 @@
             ⚡ Otimização Automática WebP Ativa: Suas imagens 4K são otimizadas automaticamente no envio para máxima fluidez 60fps na Galeria 3D.
           </p>
 
+          <div id="project-watermark-status" class="watermark-status-banner">
+            <span style="font-size: 1.1rem;">🛡️</span>
+            <span id="project-watermark-status-text">
+              Marca d'água ativa: Todas as fachadas e plantas cadastradas receberão a logo centralizada automaticamente (transparência e tamanho configuráveis abaixo).
+            </span>
+          </div>
+
           <button type="submit" class="submit-btn" id="submit-admin-btn" style="margin-top: 1.25rem;">Cadastrar Projeto</button>
         </form>
       </div>
@@ -198,6 +214,128 @@
           </div>
           <button type="submit" class="submit-btn" id="submit-logo-btn">Salvar Logotipo</button>
         </form>
+      </div>
+
+      <div class="panel" id="watermark-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h2 style="margin: 0;">Marca d'Água nas Imagens (Plantas e Fachadas)</h2>
+          <span id="watermark-active-pill" style="background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #86efac; padding: 0.2rem 0.6rem; border-radius: 0.4rem; font-size: 0.75rem; font-weight: 600;">Ativa</span>
+        </div>
+        <p style="font-size: 0.85rem; color: #999; margin-top: 0; margin-bottom: 1.5rem;">
+          Defina uma logo para estampar bem no <strong>centro exato</strong> de todas as fotos de fachadas e plantas que você cadastrar no site, escolhendo a transparência e o tamanho ideais.
+        </p>
+
+        <!-- Status da Logo de Marca d'Água -->
+        <div style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; background: rgba(0,0,0,0.35); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid rgba(255,255,255,0.1);">
+          <div style="display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;">
+            <div style="background: rgba(255,255,255,0.06); padding: 0.85rem 1.25rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.12); min-width: 150px; min-height: 55px; display: flex; align-items: center; justify-content: center;">
+              <img id="watermark-logo-thumb" src="/images/watermark.png" alt="Logo Marca d'água" style="max-height: 48px; max-width: 140px; object-fit: contain; display: block;" onerror="this.src='/images/logo.png';" />
+            </div>
+            <div>
+              <p id="watermark-source-badge" style="margin: 0 0 0.35rem 0; font-size: 0.88rem; font-weight: 600; color: #e5c158;">
+                Carregando logo da marca d'água...
+              </p>
+              <p style="margin: 0; font-size: 0.78rem; color: #888;">
+                Você pode usar uma logo exclusiva para as fotos ou manter a mesma logo oficial do site.
+              </p>
+            </div>
+          </div>
+          <button type="button" id="delete-watermark-btn" style="display: none; background: #dc2626; color: white; border: none; padding: 0.65rem 1.1rem; border-radius: 0.4rem; cursor: pointer; font-size: 0.8rem; font-weight: 600; text-transform: uppercase;">Usar Logo Padrão do Site</button>
+        </div>
+
+        <!-- Formulário para Upload de Logo Específica de Marca d'Água -->
+        <form id="watermark-logo-form" style="margin-bottom: 2rem;">
+          <div class="form-group">
+            <label>Enviar / Trocar Logo da Marca d'Água (PNG transparente recomendado, JPG, SVG ou WebP)</label>
+            <input type="file" id="form-watermark-logo" accept="image/*" required />
+          </div>
+          <button type="submit" class="submit-btn" id="submit-watermark-logo-btn" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);">Salvar Esta Logo para as Fotos</button>
+        </form>
+
+        <!-- Formulário de Transparência, Tamanho e Ativação -->
+        <form id="watermark-settings-form">
+          <div style="background: rgba(255,255,255,0.03); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 1.5rem;">
+            
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+              <label class="social-toggle-label" style="font-size: 0.95rem; color: #fff; text-transform: none; font-weight: 600;">
+                <input type="checkbox" id="watermark-enabled-checkbox" checked /> Inserir marca d'água automaticamente nas novas fachadas e plantas cadastradas
+              </label>
+              <p style="margin: 0.35rem 0 0 1.7rem; font-size: 0.78rem; color: #888;">
+                Ao cadastrar ou atualizar projetos, a logo configurada será gravada no meio de todas as imagens enviadas.
+              </p>
+            </div>
+
+            <div class="form-row">
+              <!-- Slider de Transparência -->
+              <div class="form-group" style="margin-bottom: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="margin: 0;">Transparência da Logo (Opacidade)</label>
+                  <span id="watermark-opacity-badge" class="range-badge">35%</span>
+                </div>
+                <div class="range-wrapper">
+                  <input type="range" id="watermark-opacity-range" class="range-input" min="5" max="100" step="1" value="35" />
+                </div>
+                <p style="margin: 0.4rem 0 0 0; font-size: 0.75rem; color: #777;">
+                  Recomendado: 25% a 50% para proteger a autoria com sofisticação e discrição.
+                </p>
+              </div>
+
+              <!-- Slider de Tamanho da Logo -->
+              <div class="form-group" style="margin-bottom: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="margin: 0;">Tamanho da Logo no Meio da Imagem</label>
+                  <span id="watermark-size-badge" class="range-badge">35%</span>
+                </div>
+                <div class="range-wrapper">
+                  <input type="range" id="watermark-size-range" class="range-input" min="10" max="90" step="1" value="35" />
+                </div>
+                <p style="margin: 0.4rem 0 0 0; font-size: 0.75rem; color: #777;">
+                  Proporção em relação à largura da imagem (% mantendo o aspecto da logo).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Preview Interativo em Tempo Real -->
+          <div style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <label style="margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa; font-weight: 600;">
+                👁️ Pré-visualização ao Vivo (Centro da Imagem)
+              </label>
+              <div style="display: flex; gap: 0.4rem;">
+                <button type="button" class="preview-tab-btn active" id="preview-tab-facade">Simular Fachada</button>
+                <button type="button" class="preview-tab-btn" id="preview-tab-plan">Simular Planta Humanizada</button>
+              </div>
+            </div>
+
+            <div class="watermark-preview-card" id="watermark-preview-card">
+              <!-- Fundo demonstrativo -->
+              <img id="watermark-preview-sample-bg" class="watermark-preview-bg" src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" alt="Preview Imagem" />
+              <!-- Logo centralizada -->
+              <img id="watermark-preview-logo-img" class="watermark-preview-logo" src="/images/watermark.png" alt="Marca d'água no centro" onerror="this.src='/images/logo.png';" />
+              
+              <!-- Badge indicador de posição central -->
+              <div style="position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.15); padding: 0.3rem 0.6rem; border-radius: 0.35rem; font-size: 0.72rem; color: #ddd; pointer-events: none;">
+                📍 Posição: <strong>Centro Exato</strong>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="submit-btn" id="submit-watermark-settings-btn">Salvar Configurações da Marca d'Água</button>
+        </form>
+
+        <!-- Recurso Adicional: Aplicar retroativamente em projetos já cadastrados -->
+        <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h4 style="margin: 0 0 0.25rem 0; font-size: 0.95rem; color: #fff;">Já tem projetos cadastrados no site?</h4>
+            <p style="margin: 0; font-size: 0.8rem; color: #888;">
+              Você pode aplicar esta logo de marca d'água em todas as fachadas e plantas de projetos já existentes com 1 clique.
+            </p>
+          </div>
+          <button type="button" id="apply-watermark-existing-btn" class="action-btn" style="background: rgba(229,193,88,0.15); border-color: rgba(229,193,88,0.4); color: #f8e3a1; padding: 0.65rem 1.1rem;">
+            🔄 Aplicar Marca d'Água nos Projetos Antigos
+          </button>
+        </div>
       </div>
 
       <div class="panel">
