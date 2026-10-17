@@ -49,8 +49,6 @@
       .watermark-preview-card { position: relative; width: 100%; aspect-ratio: 16/9; max-height: 380px; border-radius: 0.75rem; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); background: #111; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.6); }
       .watermark-preview-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.9; }
       .watermark-preview-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); max-height: 85%; object-fit: contain; pointer-events: none; transition: opacity 0.15s ease, width 0.15s ease; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
-      .preview-tab-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); color: #ccc; padding: 0.35rem 0.75rem; border-radius: 0.35rem; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
-      .preview-tab-btn.active { background: #e5c158; border-color: #e5c158; color: #000; }
       .watermark-status-banner { background: rgba(229, 193, 88, 0.1); border: 1px solid rgba(229, 193, 88, 0.3); color: #f8e3a1; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-top: 0.75rem; font-size: 0.82rem; display: flex; align-items: center; gap: 0.5rem; }
     </style>
   </head>
@@ -298,14 +296,10 @@
 
           <!-- Live Preview Interativo em Tempo Real -->
           <div style="margin-bottom: 1.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="margin-bottom: 0.75rem;">
               <label style="margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa; font-weight: 600;">
                 👁️ Pré-visualização ao Vivo (Centro da Imagem)
               </label>
-              <div style="display: flex; gap: 0.4rem;">
-                <button type="button" class="preview-tab-btn active" id="preview-tab-facade">Simular Fachada</button>
-                <button type="button" class="preview-tab-btn" id="preview-tab-plan">Simular Planta Humanizada</button>
-              </div>
             </div>
 
             <div class="watermark-preview-card" id="watermark-preview-card">
@@ -323,19 +317,6 @@
 
           <button type="submit" class="submit-btn" id="submit-watermark-settings-btn">Salvar Configurações da Marca d'Água</button>
         </form>
-
-        <!-- Recurso Adicional: Aplicar retroativamente em projetos já cadastrados -->
-        <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-          <div>
-            <h4 style="margin: 0 0 0.25rem 0; font-size: 0.95rem; color: #fff;">Já tem projetos cadastrados no site?</h4>
-            <p style="margin: 0; font-size: 0.8rem; color: #888;">
-              Você pode aplicar esta logo de marca d'água em todas as fachadas e plantas de projetos já existentes com 1 clique.
-            </p>
-          </div>
-          <button type="button" id="apply-watermark-existing-btn" class="action-btn" style="background: rgba(229,193,88,0.15); border-color: rgba(229,193,88,0.4); color: #f8e3a1; padding: 0.65rem 1.1rem;">
-            🔄 Aplicar Marca d'Água nos Projetos Antigos
-          </button>
-        </div>
       </div>
 
       <div class="panel">

@@ -65,9 +65,6 @@ const submitWatermarkSettingsBtn = document.getElementById('submit-watermark-set
 
 const watermarkPreviewSampleBg = document.getElementById('watermark-preview-sample-bg');
 const watermarkPreviewLogoImg = document.getElementById('watermark-preview-logo-img');
-const previewTabFacade = document.getElementById('preview-tab-facade');
-const previewTabPlan = document.getElementById('preview-tab-plan');
-const applyWatermarkExistingBtn = document.getElementById('apply-watermark-existing-btn');
 
 const projectWatermarkStatus = document.getElementById('project-watermark-status');
 const projectWatermarkStatusText = document.getElementById('project-watermark-status-text');
@@ -908,20 +905,6 @@ if (watermarkEnabledCheckbox) {
   });
 }
 
-if (previewTabFacade && previewTabPlan && watermarkPreviewSampleBg) {
-  previewTabFacade.addEventListener('click', () => {
-    previewTabFacade.classList.add('active');
-    previewTabPlan.classList.remove('active');
-    watermarkPreviewSampleBg.src = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80';
-  });
-
-  previewTabPlan.addEventListener('click', () => {
-    previewTabPlan.classList.add('active');
-    previewTabFacade.classList.remove('active');
-    watermarkPreviewSampleBg.src = 'https://images.unsplash.com/photo-1574362848149-11496d93a7c7?auto=format&fit=crop&w=1200&q=80';
-  });
-}
-
 if (watermarkLogoForm) {
   watermarkLogoForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1025,111 +1008,6 @@ if (watermarkSettingsForm) {
         submitWatermarkSettingsBtn.innerText = originalBtnText;
         submitWatermarkSettingsBtn.disabled = false;
       }
-    }
-  });
-}
-
-if (applyWatermarkExistingBtn) {
-  applyWatermarkExistingBtn.addEventListener('click', async () => {
-    if (!cachedProjects || cachedProjects.length === 0) {
-      return alert('Nenhum projeto cadastrado no momento para processar.');
-    }
-
-    if (!confirm(`Deseja aplicar a marca d'água em todas as imagens dos ${cachedProjects.length} projetos já cadastrados? Esta ação reprocessará fachadas e plantas aplicando a logo centralizada com o tamanho e transparência configurados.`)) {
-      return;
-    }
-
-    const originalText = applyWatermarkExistingBtn.innerText;
-    applyWatermarkExistingBtn.disabled = true;
-
-    try {
-      const watermarkLogoImg = await loadImageAsync(`/images/watermark.png?t=${Date.now()}`);
-      if (!watermarkLogoImg || !watermarkLogoImg.naturalWidth) {
-        throw new Error('Não foi possível carregar a imagem da logo. Certifique-se de que há uma logo do site ou logo de marca d\'água cadastrada.');
-      }
-
-      const opacity = watermarkOpacityRange ? Number(watermarkOpacityRange.value) : (cachedSettings.watermarkOpacity ?? 35);
-      const size = watermarkSizeRange ? Number(watermarkSizeRange.value) : (cachedSettings.watermarkSize ?? 35);
-
-      for (let i = 0; i < cachedProjects.length; i++) {
-        const project = cachedProjects[i];
-        applyWatermarkExistingBtn.innerText = `Processando ${i + 1}/${cachedProjects.length}: ${project.title}...`;
-
-        const formData = new FormData();
-        formData.append('title', project.title || '');
-        formData.append('subtitle', project.subtitle || '');
-        formData.append('lotSize', project.lotSize || '');
-        formData.append('houseType', project.houseType || 'Térrea');
-        formData.append('desc', project.desc || '');
-        formData.append('area', project.area || '');
-        formData.append('bedrooms', project.bedrooms || '');
-        formData.append('garage', project.garage || '');
-        formData.append('status', project.status || 'Projeto Exclusivo');
-        formData.append('videoUrl', project.videoUrl || '');
-        formData.append('visible', String(project.visible !== false));
-        formData.append('order', String(project.order || 0));
-
-        const facades = project.facades || (project.facade ? [project.facade] : []);
-        for (const fUrl of facades) {
-          try {
-            const resp = await fetch(fUrl, { cache: 'no-store' });
-            if (resp.ok) {
-              const blob = await resp.blob();
-              const file = new File([blob], 'facade.webp', { type: blob.type || 'image/webp' });
-              const stamped = await processImageWithWatermark(file, {
-                maxDimension: 1920,
-                quality: 0.86,
-                watermarkImg: watermarkLogoImg,
-                watermarkEnabled: true,
-                watermarkOpacity: opacity,
-                watermarkSize: size
-              });
-              formData.append('facades', stamped);
-            }
-          } catch (e) {
-            console.warn('Erro ao processar imagem de fachada:', e);
-          }
-        }
-
-        const plans = project.plans || (project.plan ? [project.plan] : []);
-        for (const pUrl of plans) {
-          try {
-            const resp = await fetch(pUrl, { cache: 'no-store' });
-            if (resp.ok) {
-              const blob = await resp.blob();
-              const file = new File([blob], 'plan.webp', { type: blob.type || 'image/webp' });
-              const stamped = await processImageWithWatermark(file, {
-                maxDimension: 2400,
-                quality: 0.90,
-                watermarkImg: watermarkLogoImg,
-                watermarkEnabled: true,
-                watermarkOpacity: opacity,
-                watermarkSize: size
-              });
-              formData.append('plans', stamped);
-            }
-          } catch (e) {
-            console.warn('Erro ao processar imagem de planta:', e);
-          }
-        }
-
-        const putRes = await fetch(`/api/projects/${project.id}`, {
-          method: 'PUT',
-          headers: { 'Authorization': localStorage.getItem('adminToken') },
-          body: formData
-        });
-
-        if (putRes.status === 401 || putRes.status === 403) return handleUnauthorized();
-      }
-
-      alert('Todas as fotos e plantas dos projetos antigos foram reprocessadas e atualizadas com sucesso com a marca d\'água!');
-      await fetchAdminProjects();
-    } catch (err) {
-      console.error('Erro ao reprocessar projetos:', err);
-      alert(`Falha ao aplicar marca d'água: ${err.message}`);
-    } finally {
-      applyWatermarkExistingBtn.innerText = originalText;
-      applyWatermarkExistingBtn.disabled = false;
     }
   });
 }

@@ -261,6 +261,7 @@ app.get('/robots.txt', (req, res) => {
   res.send(
 `User-agent: *
 Allow: /
+Disallow: /admin
 Disallow: /admin.html
 Disallow: /api/
 
@@ -313,12 +314,12 @@ app.get('/llms.txt', (req, res) => {
   const lines = [
     '# Level Construtora — Arquitetura, Engenharia Civil e Obras em Maringá - PR',
     '',
-    '> Escritório de arquitetura, engenharia civil e construtora especializada em casas térreas, sobrados de alto padrão, casas geminadas e obras residenciais em Maringá e Região Metropolitana (Sarandi, Marialva, Paiçandu).',
+    '> Construtora e escritório integrado especializado em construção residencial de médio e alto padrão, obras financiadas (aquisição de terreno e construção Caixa) e projetos complementares compatibilizados em Maringá e Região Metropolitana (Sarandi, Marialva, Paiçandu).',
     '',
     '## Informações de Contato e Localização',
     `- Endereço: ${settings.address || 'Avenida Centenário, 520, Maringá - PR'}`,
     `- Site Oficial: https://levelconstrutora.com/`,
-    `- Serviços: Projetos Arquitetônicos 3D, Projetos Estruturais, Elétricos, Hidrossanitários e Execução Completa de Obras (Turnkey).`,
+    `- Serviços: Construção Residencial Turnkey (Casas Térreas e Sobrados), Obras Financiadas Caixa (Terreno e Construção), Projetos Arquitetônicos 3D, Interiores e Projetos de Engenharia (Estrutural, Elétrico e Hidráulico).`,
     '',
     '## Catálogo de Projetos Recentes'
   ];
